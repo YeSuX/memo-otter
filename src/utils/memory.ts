@@ -105,7 +105,9 @@ export async function contentHash(content: string): Promise<string> {
 }
 
 export function buildVectorId(memoryId: string, hash: string, chunkIndex = 0): string {
-  return `mem:${memoryId}:chunk:${chunkIndex}:hash:${hash.slice(0, 12)}`;
+  // Vectorize 的 id 上限是 64 bytes；这里压缩 UUID 和字段名，避免长 memory id 导致 upsert 失败。
+  const compactMemoryId = memoryId.replace(/^mem_/, '').replace(/-/g, '').slice(0, 32);
+  return `m:${compactMemoryId}:c:${chunkIndex}:h:${hash.slice(0, 12)}`;
 }
 
 export function buildEmbeddableMemoryText(memory: Memory): string {

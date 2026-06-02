@@ -27,8 +27,9 @@ describe('memory utils', () => {
   });
 
   it('builds vector id and embeddable text', () => {
-    const vectorId = buildVectorId('mem_1', 'abcdef1234567890');
-    expect(vectorId).toBe('mem:mem_1:chunk:0:hash:abcdef123456');
+    const vectorId = buildVectorId('mem_8acb2042-267f-4a33-b902-176daddca5b8', 'abcdef1234567890');
+    expect(vectorId).toBe('m:8acb2042267f4a33b902176daddca5b8:c:0:h:abcdef123456');
+    expect(new TextEncoder().encode(vectorId).length).toBeLessThanOrEqual(64);
 
     const text = buildEmbeddableMemoryText({
       id: 'mem_1',
