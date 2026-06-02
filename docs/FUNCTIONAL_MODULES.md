@@ -112,6 +112,22 @@ Memory 数据模型
 
 ## 3. Memory 基础管理
 
+实现状态：已完成第一版工程实现。
+
+落地内容：
+
+- Hono routes：`GET /memories`、`POST /memories`、`GET /memories/:id`、`PATCH /memories/:id`、`POST /memories/:id/archive`。
+- Service 层：`MemoryService`、`EmbeddingService`、`EventService`。
+- Repository 层：`MemoryRepository`、`EmbeddingRepository`、`EventRepository`。
+- Schema 层：Zod create/update/list/archive 校验。
+- 本地和远端 D1 migration 已应用。
+- 本地测试覆盖创建、列表、详情、编辑、归档、认证和索引失败降级。
+
+当前限制：
+
+- Workers AI 在本地 HTTP 冒烟中返回过 internal error，memory 会保留且 `embedding_status = failed`，符合失败降级设计。
+- 远端 Worker 已部署，但本机访问 workers.dev URL 出现超时，远端 HTTP 冒烟需要稍后复测。
+
 ### 3.1 模块目标
 
 让用户可以创建、查看、编辑和归档记忆。这是后续搜索、REST API、Skill 和 Web UI 的基础。

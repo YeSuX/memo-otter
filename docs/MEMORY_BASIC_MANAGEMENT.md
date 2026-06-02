@@ -1170,7 +1170,239 @@ Skill 入口调用写操作时应遵守：
 15. 在 Codex Skill 中补充基础管理调用说明。
 16. 完成真实 Cloudflare 资源冒烟测试。
 
-## 18. 验收标准
+## 18. 已实现 TODO 状态
+
+更新时间：2026-06-03
+
+本节记录 Memory 基础管理从设计到实现的任务完成状态。已完成项使用 `[x]`，受外部网络或 Cloudflare 服务状态限制而未完全验收的项目保留 `[ ]` 并附说明。
+
+### 18.1 工程骨架
+
+- [x] 初始化 pnpm 项目依赖。
+- [x] 安装运行时依赖：`hono`、`zod`。
+- [x] 安装开发依赖：`wrangler`、`typescript`、`vitest`、`@types/node`。
+- [x] 创建 `src/`。
+- [x] 创建 `src/index.ts`。
+- [x] 创建 `src/app.ts`。
+- [x] 创建 `src/routes/`。
+- [x] 创建 `src/services/`。
+- [x] 创建 `src/repositories/`。
+- [x] 创建 `src/schemas/`。
+- [x] 创建 `src/utils/`。
+- [x] 创建 `src/skill/`。
+- [x] 创建 `test/`。
+- [x] 创建 `migrations/`。
+- [x] 创建 `tsconfig.json`。
+- [x] 创建 `vitest.config.ts`。
+- [x] 创建 `wrangler.jsonc`。
+- [x] 创建 `pnpm-workspace.yaml`，批准 `esbuild`、`sharp`、`workerd` 构建脚本。
+- [x] 在 `package.json` 中添加 `dev`、`deploy`、`typecheck`、`test`、`db:migrate:local`、`db:migrate:remote` scripts。
+- [x] 实现最小 Hono app。
+- [x] 实现 `/health`。
+- [x] 本地 dev server 启动成功。
+- [x] 本地 `/health` 返回 200。
+
+### 18.2 Cloudflare 资源与配置
+
+- [x] 配置 Worker name：`memo-otter`。
+- [x] 配置 `main = src/index.ts`。
+- [x] 设置 `compatibility_date = 2026-06-02`。
+- [x] 启用 `nodejs_compat`。
+- [x] 启用 observability。
+- [x] 创建远端 D1 database：`memo-otter-db`。
+- [x] 写入 D1 database id：`e6933944-d6bc-451a-bc37-e4f191cf3f7a`。
+- [x] 配置 D1 binding：`DB`。
+- [x] 创建远端 Vectorize index：`memo-otter-memory`。
+- [x] 确认 Vectorize dimensions：768。
+- [x] 确认 Vectorize metric：cosine。
+- [x] 配置 Vectorize binding：`VECTORIZE`。
+- [x] 设置 Vectorize local dev `remote: true`。
+- [x] 配置 Workers AI binding：`AI`。
+- [x] 设置 Workers AI local dev `remote: true`。
+- [x] 配置 `EMBEDDING_MODEL = @cf/baai/bge-base-en-v1.5`。
+- [x] 创建 `.dev.vars.example`。
+- [x] 创建本地 `.dev.vars`，并通过 `.gitignore` 排除。
+- [x] 生成随机远端 `AUTH_TOKEN` secret。
+- [x] 运行 `wrangler types` 生成 `worker-configuration.d.ts`。
+- [x] 移除旧的 `@cloudflare/workers-types`，使用 Wrangler 生成的 runtime types。
+- [x] 确认代码不手写长期维护的 Env binding 类型，只补充 `RuntimeEnv` 承载 secret。
+
+### 18.3 D1 Migration
+
+- [x] 创建 `migrations/0001_create_memory_tables.sql`。
+- [x] 创建 `memories` 表。
+- [x] 创建 `memory_embeddings` 表。
+- [x] 创建 `memory_events` 表。
+- [x] 添加 `content` 非空约束。
+- [x] 添加 `scope` 枚举约束。
+- [x] 添加 `type` 非空约束。
+- [x] 添加 `status` 枚举约束。
+- [x] 添加 `embedding_status` 枚举约束。
+- [x] 添加 `archived_at` 归档约束。
+- [x] 创建 `memories` 推荐索引。
+- [x] 创建 `memory_embeddings` 唯一约束和索引。
+- [x] 创建 `memory_events` 事件类型约束和索引。
+- [x] 本地 migration 应用成功。
+- [x] 远端 migration 应用成功。
+- [x] 本地 D1 验证三张表存在。
+
+### 18.4 类型、工具与 Schema
+
+- [x] 定义 `MemoryScope`。
+- [x] 定义 `MemoryStatus`。
+- [x] 定义 `EmbeddingStatus`。
+- [x] 定义 `Memory`。
+- [x] 定义 `MemoryListItem`。
+- [x] 定义 `MemoryEvent`。
+- [x] 定义 `MemoryIndexState`。
+- [x] 定义 `MemoryWarning`。
+- [x] 定义 D1 row 类型：`MemoryRow`。
+- [x] 定义 D1 row 类型：`MemoryEmbeddingRow`。
+- [x] 定义 D1 row 类型：`MemoryEventRow`。
+- [x] 实现 `nowIso()`。
+- [x] 实现 memory/event/embedding id 生成。
+- [x] 实现 `normalizeProject()`。
+- [x] 实现 `normalizeType()`。
+- [x] 实现 `normalizeTags()`。
+- [x] 实现 `normalizeSource()`。
+- [x] 实现 `generateTitleFromContent()`。
+- [x] 实现 JSON 安全解析和序列化。
+- [x] 实现 `contentHash()`。
+- [x] 实现 `buildVectorId()`。
+- [x] 实现 `buildEmbeddableMemoryText()`。
+- [x] 实现 D1 row 到 domain object 映射。
+- [x] 实现 domain object 到列表项映射。
+- [x] 创建 `src/schemas/memory.ts`。
+- [x] 定义 create/update/list/archive Zod schemas。
+- [x] 实现 Zod error 到统一错误响应映射。
+
+### 18.5 Repository 层
+
+- [x] 创建 `memory-repository.ts`。
+- [x] 实现 `createMemory()`。
+- [x] 实现 `getMemoryById()`。
+- [x] 实现 `listMemories()`。
+- [x] 实现 project/scope/type/status 过滤。
+- [x] 实现默认排除 archived。
+- [x] 实现 `include_archived = true`。
+- [x] 实现 `limit` 和 `offset`。
+- [x] 实现按 `updated_at DESC` 排序。
+- [x] 实现应用层 tags 过滤。
+- [x] 实现 `updateMemory()`。
+- [x] 实现 `updateEmbeddingStatus()`。
+- [x] 实现 `archiveMemory()`。
+- [x] 实现重复 title 检查。
+- [x] 创建 `embedding-repository.ts`。
+- [x] 实现 embedding record 创建与查询。
+- [x] 创建 `event-repository.ts`。
+- [x] 实现 event 创建与查询。
+- [x] 确保 repository 不调用 Workers AI。
+- [x] 确保 repository 不调用 Vectorize。
+
+### 18.6 Service 层
+
+- [x] 创建 `event-service.ts`。
+- [x] 实现 create/update/archive/index/index_failed event 记录。
+- [x] event 写入失败时记录日志，不破坏主流程。
+- [x] 创建 `embedding-service.ts`。
+- [x] 实现 `indexMemory()`。
+- [x] 实现 Workers AI embedding 调用。
+- [x] 实现 Vectorize upsert。
+- [x] 实现 `memory_embeddings` 写入。
+- [x] 索引成功后设置 `embedding_status = indexed`。
+- [x] 索引失败后设置 `embedding_status = failed`。
+- [x] 索引失败后记录 `index_failed` event。
+- [x] 清理错误消息中的控制字符，避免破坏 JSON 响应。
+- [x] 创建 `memory-service.ts`。
+- [x] 实现 `createMemory()`。
+- [x] 实现 `listMemories()`。
+- [x] 实现 `getMemory()`。
+- [x] 实现 `updateMemory()`。
+- [x] 实现 `archiveMemory()`。
+- [x] 创建时填充默认值。
+- [x] 创建时自动生成标题。
+- [x] 创建后触发索引。
+- [x] 更新 content 后触发重新索引。
+- [x] 仅 metadata/tags 更新不触发重新索引。
+- [x] canonical 编辑返回 warning。
+- [x] `PATCH status=archived` 要求走归档 endpoint。
+- [x] 归档不删除 D1 数据。
+- [x] 归档不删除 Vectorize 向量。
+
+### 18.7 REST API 与认证
+
+- [x] 创建 `routes/memories.ts`。
+- [x] 实现 `POST /memories`。
+- [x] 实现 `GET /memories`。
+- [x] 实现 `GET /memories/:id`。
+- [x] 实现 `PATCH /memories/:id`。
+- [x] 实现 `POST /memories/:id/archive`。
+- [x] 挂载 `app.route('/memories', memoriesRoutes)`。
+- [x] 创建 `routes/health.ts`。
+- [x] 创建 `routes/search.ts`，提供最小搜索占位能力并默认排除 archived。
+- [x] 创建 `routes/context.ts`。
+- [x] 创建 `routes/export.ts`。
+- [x] 创建 `utils/auth.ts`。
+- [x] 实现 Bearer token 认证。
+- [x] 使用摘要后的常量时间 token 比较。
+- [x] 创建 `utils/errors.ts`。
+- [x] 实现统一错误响应。
+- [x] 添加全局 `app.onError`，覆盖 middleware 错误。
+- [x] 确保 route 层不直接写业务 SQL。
+- [x] 确保 route 层不直接调用 Workers AI。
+- [x] 确保 route 层不直接访问 Vectorize。
+
+### 18.8 测试与验证
+
+- [x] 创建 fake D1、fake AI、fake Vectorize 测试绑定。
+- [x] 编写工具函数测试。
+- [x] 编写 MemoryService 主链路测试。
+- [x] 编写 Memory API 主链路测试。
+- [x] 测试未认证请求返回 401。
+- [x] 测试创建、列表、详情、编辑、归档。
+- [x] 测试索引失败后 memory 仍保留。
+- [x] 测试 tags 编辑不重新索引。
+- [x] 测试 archived 默认不出现在列表。
+- [x] `pnpm typecheck` 通过。
+- [x] `pnpm test -- --run` 通过。
+- [x] `pnpm wrangler deploy --dry-run` 通过。
+- [x] `pnpm wrangler deploy` 成功。
+- [x] 本地 HTTP `/health` 冒烟通过。
+- [x] 本地 HTTP 创建、列表、详情、编辑、归档主链路完成。
+- [x] 本地 HTTP `include_archived=true` 可看到归档 memory。
+- [x] 本地 HTTP search 默认不返回 archived memory。
+- [x] 内容编辑后触发重新索引流程。
+- [x] Workers AI internal error 时，索引状态按设计降级为 `failed`。
+- [ ] 远端 workers.dev HTTP 冒烟：Worker 已部署且 `wrangler deployments list` 可看到最新版本，但本机 `curl` 到 `https://memo-otter.suxiong1998.workers.dev/health` 超时，需要后续复测网络可达性。
+- [ ] 远端环境重复创建、详情、编辑、归档主链路：依赖上一项远端 HTTP 可达性。
+
+### 18.9 Web UI、Skill 与文档
+
+- [x] 确认列表页需要字段由 `GET /memories` 返回。
+- [x] 确认详情页需要字段由 `GET /memories/:id` 返回。
+- [x] 确认创建表单字段由 `POST /memories` 支持。
+- [x] 确认编辑表单字段由 `PATCH /memories/:id` 支持。
+- [x] 确认归档按钮可调用 `POST /memories/:id/archive`。
+- [x] API 返回 `pending`、`indexed`、`failed`、`stale` 索引状态。
+- [x] API 返回 warnings。
+- [x] API 返回最近 events。
+- [x] 创建 `src/skill/memo-otter-skill.md`。
+- [x] 定义 `save_memory`。
+- [x] 定义 `list_memories`。
+- [x] 定义 `get_memory`。
+- [x] 定义 `update_memory`。
+- [x] 定义 `archive_memory`。
+- [x] 新增 `README.md`。
+- [x] README 记录本地运行命令。
+- [x] README 记录 migration 命令。
+- [x] README 记录 D1、Vectorize、AI binding 配置。
+- [x] README 记录 `AUTH_TOKEN` 配置。
+- [x] README 记录已知限制和 MVP+ 候选方向。
+- [x] 更新 `TECHNICAL_DESIGN.md` 实现状态。
+- [x] 更新 `TEST_PLAN.md` 验证状态。
+- [x] 更新 `FUNCTIONAL_MODULES.md` Memory 基础管理实现状态。
+
+## 19. 验收标准
 
 本模块完成时必须满足：
 
@@ -1188,9 +1420,9 @@ Skill 入口调用写操作时应遵守：
 - 显式 `include_archived = true` 后列表可以显示 archived memory。
 - 所有接口返回结构适合 UI、REST API 和 Skill 使用。
 
-## 19. 主要风险与取舍
+## 20. 主要风险与取舍
 
-### 19.1 同步索引可能让创建变慢
+### 20.1 同步索引可能让创建变慢
 
 MVP 优先同步索引，便于调试和验收。如果响应延迟影响体验，再改为：
 
@@ -1198,7 +1430,7 @@ MVP 优先同步索引，便于调试和验收。如果响应延迟影响体验�
 - 用 `ctx.waitUntil()` 后台索引。
 - UI 轮询详情或列表状态。
 
-### 19.2 Tags 过滤不适合长期全表扫描
+### 20.2 Tags 过滤不适合长期全表扫描
 
 MVP 用 JSON 字段可以减少表结构复杂度。数据增长后应考虑：
 
@@ -1206,10 +1438,10 @@ MVP 用 JSON 字段可以减少表结构复杂度。数据增长后应考虑：
 - 给 tag 建索引。
 - 列表查询先按结构化字段缩小范围。
 
-### 19.3 重复和冲突提示第一版不够智能
+### 20.3 重复和冲突提示第一版不够智能
 
 MVP 先提供 warning 结构和低成本启发式。语义搜索完成后，再用向量相似度增强重复和冲突提示。
 
-### 19.4 Archived 向量暂不删除
+### 20.4 Archived 向量暂不删除
 
 不删除 Vectorize 向量可以降低归档流程复杂度。搜索时必须回查 D1 并过滤 archived，避免已归档内容被默认召回。

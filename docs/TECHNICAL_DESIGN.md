@@ -4,6 +4,18 @@
 
 这份文档定义 Memo Otter MVP 的技术方案。它基于 PRD、MVP 范围、功能模块拆解和原型交互设计，目标是把产品需求转化为可以进入工程实现的架构、数据模型、接口、部署和测试方案。
 
+当前实现状态：
+
+- 服务端框架已采用 Hono。
+- 输入校验已采用 Zod。
+- Worker 配置已使用 `wrangler.jsonc`。
+- D1 binding：`DB`，database id `e6933944-d6bc-451a-bc37-e4f191cf3f7a`。
+- Vectorize binding：`VECTORIZE`，index `memo-otter-memory`，768 维，cosine。
+- Workers AI binding：`AI`。
+- Secret：`AUTH_TOKEN` 已配置到远端 Worker，本地通过 `.dev.vars` 提供。
+- `wrangler types` 已生成 `worker-configuration.d.ts`。
+- Worker 已部署到 `https://memo-otter.suxiong1998.workers.dev`。
+
 ## 1. 技术目标
 
 Memo Otter MVP 要打通个人 AI 记忆服务的最小闭环：

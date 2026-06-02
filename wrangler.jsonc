@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "memo-otter",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "memo-otter-db",
+      "database_id": "e6933944-d6bc-451a-bc37-e4f191cf3f7a"
+    }
+  ],
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "memo-otter-memory",
+      "remote": true
+    }
+  ],
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  }
+}

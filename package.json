@@ -1,6 +1,20 @@
 {
+	"scripts": {
+		"dev": "wrangler dev --port 8787",
+		"deploy": "wrangler deploy",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest",
+		"db:migrate:local": "wrangler d1 migrations apply memo-otter-db --local",
+		"db:migrate:remote": "wrangler d1 migrations apply memo-otter-db --remote"
+	},
 	"dependencies": {
 		"hono": "^4.12.23",
 		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.1",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.8",
+		"wrangler": "^4.96.0"
 	}
 }
