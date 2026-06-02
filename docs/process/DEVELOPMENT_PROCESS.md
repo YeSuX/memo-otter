@@ -281,18 +281,18 @@ MVP 上线后，不急着加功能，先用它记录 Memo Otter 自己的开发�
 
 基于现有 PRD，下一步最适合做三件事：
 
-1. 编写 `docs/MVP_SCOPE.md`，明确第一版只做哪些功能。
-2. 编写 `docs/TECHNICAL_DESIGN.md`，确定 Cloudflare、D1、Vectorize、Workers AI、REST API、Codex Skill 和 Web UI 的技术方案。
-3. 编写 `docs/TASKS.md`，把 MVP 拆成可以逐项开发的任务列表。
+1. 编写 `docs/product/MVP_SCOPE.md`，明确第一版只做哪些功能。
+2. 编写 `docs/architecture/TECHNICAL_DESIGN.md`，确定 Cloudflare、D1、Vectorize、Workers AI、REST API、Codex Skill 和 Web UI 的技术方案。
+3. 编写 `docs/process/TASKS.md`，把 MVP 拆成可以逐项开发的任务列表。
 
 完成这三份文档后，再进入代码初始化会更稳。
 
-PRD 到技术方案之间的功能模块拆解见：[功能模块拆解](./FUNCTIONAL_MODULES.md)。
+PRD 到技术方案之间的功能模块拆解见：[功能模块拆解](../architecture/FUNCTIONAL_MODULES.md)。
 
-MVP Web UI 的原型与交互设计见：[原型与交互设计](./INTERACTION_DESIGN.md)。
+MVP Web UI 的原型与交互设计见：[原型与交互设计](../design/INTERACTION_DESIGN.md)。
 
-MVP 的技术方案设计见：[技术方案设计](./TECHNICAL_DESIGN.md)。
+MVP 的技术方案设计见：[技术方案设计](../architecture/TECHNICAL_DESIGN.md)。
 
-MVP 的测试策略、用例和上线验收标准见：[测试方案](./TEST_PLAN.md)。
+MVP 的测试策略、用例和上线验收标准见：[测试方案](../testing/TEST_PLAN.md)。
 
 当前所有文档的统一口径见：[文档口径基准](./DOCUMENTATION_ALIGNMENT.md)。

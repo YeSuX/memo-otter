@@ -26,6 +26,10 @@ Private API requests require:
 Authorization: Bearer <AUTH_TOKEN>
 ```
 
+## Documentation
+
+See [docs/README.md](./docs/README.md) for the categorized documentation index.
+
 ## Scripts
 
 ```bash

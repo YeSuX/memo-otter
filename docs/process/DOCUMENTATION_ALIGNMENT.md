@@ -131,14 +131,14 @@ MVP 不测：
 
 如果文档之间出现冲突，按以下顺序校准：
 
-1. `docs/DOCUMENTATION_ALIGNMENT.md`
-2. `docs/MVP_SCOPE.md`
-3. `docs/PRD.md`
-4. `docs/TECHNICAL_DESIGN.md`
-5. `docs/FUNCTIONAL_MODULES.md`
-6. `docs/INTERACTION_DESIGN.md`
-7. `docs/TEST_PLAN.md`
-8. `docs/DEFERRED_REQUIREMENTS.md`
-9. `docs/OPEN_QUESTIONS.md`
-10. `docs/PRD_REVIEW.md`
-11. `docs/DEVELOPMENT_PROCESS.md`
+1. `docs/process/DOCUMENTATION_ALIGNMENT.md`
+2. `docs/product/MVP_SCOPE.md`
+3. `docs/product/PRD.md`
+4. `docs/architecture/TECHNICAL_DESIGN.md`
+5. `docs/architecture/FUNCTIONAL_MODULES.md`
+6. `docs/design/INTERACTION_DESIGN.md`
+7. `docs/testing/TEST_PLAN.md`
+8. `docs/product/DEFERRED_REQUIREMENTS.md`
+9. `docs/product/OPEN_QUESTIONS.md`
+10. `docs/product/PRD_REVIEW.md`
+11. `docs/process/DEVELOPMENT_PROCESS.md`

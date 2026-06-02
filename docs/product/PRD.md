@@ -685,6 +685,6 @@ MVP 上线前必须回答的问题见：[开放问题](./OPEN_QUESTIONS.md)。
 
 第一版应该先让 Memo Otter 记住 Memo Otter 自己的开发决策。它不需要一开始记住全世界，先记住自己的来路就够了。
 
-PRD 之后的完整开发流程见：[Memo Otter 开发流程](./DEVELOPMENT_PROCESS.md)。
+PRD 之后的完整开发流程见：[Memo Otter 开发流程](../process/DEVELOPMENT_PROCESS.md)。
 
 本轮 PRD 评审记录见：[PRD 评审记录](./PRD_REVIEW.md)。

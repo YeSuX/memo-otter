@@ -728,7 +728,7 @@ MVP 不做 JSON import。
 
 基于这份模块拆解，下一步可以继续产出：
 
-- `docs/TECHNICAL_DESIGN.md`：技术方案、架构、数据流、接口细节。
-- `docs/API_DESIGN.md`：REST API 和 Skill 调用能力的详细输入输出。
-- `docs/UI_DESIGN.md`：页面结构、状态、交互流程。
-- `docs/TASKS.md`：可执行开发任务清单。
+- `docs/architecture/TECHNICAL_DESIGN.md`：技术方案、架构、数据流、接口细节。
+- `docs/architecture/API_DESIGN.md`：REST API 和 Skill 调用能力的详细输入输出，后续如有需要再补。
+- `docs/design/UI_DESIGN.md`：页面结构、状态、交互流程，后续如有需要再补。
+- `docs/process/TASKS.md`：可执行开发任务清单，后续如有需要再补。
