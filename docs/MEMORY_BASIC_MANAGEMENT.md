@@ -1,0 +1,955 @@
+# Memo Otter Memory 基础管理设计计划
+
+更新时间：2026-06-02
+
+这份文档细化 Memo Otter MVP 的 Memory 基础管理模块。它承接 `FUNCTIONAL_MODULES.md` 中的“Memory 基础管理”，并基于 `MEMORY_DATA_MODEL.md` 和 `TECHNICAL_DESIGN.md` 约定的数据表、状态枚举和 Cloudflare 技术栈，为后续 REST API、Web UI、Codex Skill、测试和索引流程提供可执行设计。
+
+## 1. 模块目标
+
+Memory 基础管理负责让用户可以创建、查看、编辑和归档记忆，并把每次关键变化记录为轻量事件。它是后续语义搜索、项目上下文召回、REST API、Skill 和 Web UI 的共同底座。
+
+MVP 的目标不是做复杂知识库治理，而是先打通稳定的最小闭环：
+
+```text
+创建 memory
+  -> D1 保存源数据
+  -> 记录 create event
+  -> 触发 embedding / Vectorize 索引
+  -> 列表和详情可查看
+  -> 编辑内容后重新索引
+  -> 归档后默认不再召回
+```
+
+本模块需要保证：
+
+- D1 中的 `memories` 是唯一业务源数据。
+- Vectorize 只是可重建索引，不承担业务状态。
+- 所有入口返回同一种结构化 memory 结果，便于 UI、REST API 和 Skill 复用。
+- 所有写操作都记录轻量 `memory_events`，用于详情页解释、调试和导出。
+- 归档是软归档，不物理删除 memory。
+
+## 2. 范围
+
+### 2.1 MVP 内
+
+- 创建 memory。
+- 查看 memory 列表。
+- 查看 memory 详情。
+- 编辑 memory。
+- 归档 memory。
+- 记录 `create`、`update`、`archive`、`index`、`index_failed` event。
+- 返回 embedding/index 状态。
+- 返回疑似重复或冲突提示的结构字段。
+- 支持 REST API、Web UI、Codex Skill 共用同一服务层。
+
+### 2.2 MVP 外
+
+- 物理删除 memory。
+- 批量编辑、批量归档。
+- 自动合并重复 memory。
+- 自动覆盖 canonical memory。
+- 完整审计日志和权限审计。
+- Memory 版本历史。
+- 独立 project 实体。
+- 独立 type 管理后台。
+- 已归档 memory 的 Vectorize 向量清理任务。
+
+## 3. 关键设计原则
+
+### 3.1 源数据与索引分离
+
+- `memories` 保存用户可读内容和业务状态。
+- `memory_embeddings` 保存索引元数据。
+- Vectorize 保存向量，可通过 D1 源数据重建。
+- 创建和内容编辑后应触发索引流程。
+- 索引失败不能丢失 memory 源数据。
+
+### 3.2 写操作先保存，再索引
+
+创建或编辑 memory 时，先让 D1 源数据成功落库，再执行 embedding 和 Vectorize 写入。
+
+这样即使 Workers AI 或 Vectorize 失败，用户的 memory 仍然存在，并可在详情页看到 `embedding_status = failed`。
+
+### 3.3 归档默认退出召回
+
+归档 memory 后：
+
+- `status = archived`。
+- `archived_at` 写入当前时间。
+- 列表默认不显示，除非 `include_archived = true`。
+- 搜索和项目上下文默认不召回。
+- D1 保留完整内容和事件。
+- Vectorize 向量可以暂时保留，由搜索回查 D1 后过滤。
+
+### 3.4 统一结构化结果
+
+服务层输出不要只面向某一个入口。REST API、Web UI 和 Skill 都应该能理解同一组字段：
+
+- `memory`
+- `events`
+- `embedding`
+- `indexing`
+- `warnings`
+- `pagination`
+
+Skill 更适合读取简洁字段，但不需要另一套业务模型。
+
+## 4. 数据结构
+
+### 4.1 Memory 输出结构
+
+API、UI 和 Skill 统一使用 camelCase 字段：
+
+```ts
+type Memory = {
+  id: string;
+  title: string;
+  content: string;
+  project: string | null;
+  scope: 'long_term' | 'short_term';
+  type: string;
+  status: 'draft' | 'active' | 'canonical' | 'archived';
+  tags: string[];
+  source: string | null;
+  embeddingStatus: 'pending' | 'indexed' | 'failed' | 'stale';
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  metadata: Record<string, unknown>;
+};
+```
+
+列表接口不返回完整 `content`，只返回列表展示字段。
+
+### 4.2 Memory 列表项结构
+
+```ts
+type MemoryListItem = {
+  id: string;
+  title: string;
+  project: string | null;
+  scope: 'long_term' | 'short_term';
+  type: string;
+  status: 'draft' | 'active' | 'canonical' | 'archived';
+  tags: string[];
+  source: string | null;
+  embeddingStatus: 'pending' | 'indexed' | 'failed' | 'stale';
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+### 4.3 Event 输出结构
+
+详情页返回最近事件：
+
+```ts
+type MemoryEvent = {
+  id: string;
+  memoryId: string | null;
+  eventType: 'create' | 'update' | 'archive' | 'index' | 'index_failed' | 'export';
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  source: string | null;
+  createdAt: string;
+};
+```
+
+### 4.4 Embedding / Index 状态结构
+
+```ts
+type MemoryIndexState = {
+  status: 'pending' | 'indexed' | 'failed' | 'stale';
+  embeddingModel: string | null;
+  vectorId: string | null;
+  contentHash: string | null;
+  indexedAt: string | null;
+  failure: {
+    stage: 'embedding' | 'vectorize' | 'd1_metadata' | null;
+    message: string | null;
+  } | null;
+};
+```
+
+`failure.message` 只保存错误摘要，不保存完整堆栈和敏感信息。
+
+### 4.5 Warning 结构
+
+创建和编辑接口需要预留疑似重复或冲突提示：
+
+```ts
+type MemoryWarning = {
+  type: 'possible_duplicate' | 'possible_conflict' | 'canonical_edit' | 'index_failed';
+  severity: 'info' | 'warning';
+  message: string;
+  relatedMemoryIds?: string[];
+};
+```
+
+MVP 可以先只返回空数组或简单启发式结果，不需要实现复杂冲突检测。
+
+## 5. 服务分层
+
+建议实现路径沿用 `TECHNICAL_DESIGN.md` 的目录设计：
+
+```text
+src/
+  routes/
+    memories.ts
+  services/
+    memory-service.ts
+    embedding-service.ts
+    event-service.ts
+  repositories/
+    memory-repository.ts
+    embedding-repository.ts
+    event-repository.ts
+  schemas/
+    memory.ts
+  utils/
+    errors.ts
+    json.ts
+```
+
+### 5.1 Route 层
+
+职责：
+
+- 认证。
+- 读取 path、query、body。
+- 调用 schema 校验。
+- 调用 service。
+- 返回统一 JSON。
+
+Route 层不直接写 SQL，不直接调用 Workers AI，不直接访问 Vectorize。
+
+### 5.2 Service 层
+
+职责：
+
+- 执行业务流程。
+- 处理默认值。
+- 比较 content 是否变化。
+- 决定是否重新索引。
+- 写入事件。
+- 汇总结构化响应。
+
+### 5.3 Repository 层
+
+职责：
+
+- 封装 D1 SQL。
+- 完成 D1 row 与 API model 映射。
+- 处理 `tags_json`、`metadata_json` 序列化和反序列化。
+- 提供分页查询、详情查询和条件更新。
+
+### 5.4 Embedding Service
+
+职责：
+
+- 为 memory content 生成 embedding。
+- 写入 Vectorize。
+- 写入或更新 `memory_embeddings`。
+- 更新 `memories.embedding_status`。
+- 记录 `index` 或 `index_failed` event。
+
+第一版可以同步执行索引，方便调试。如果接口响应明显变慢，再把索引流程移入 `ctx.waitUntil()`。
+
+## 6. 创建 Memory
+
+### 6.1 REST Endpoint
+
+```text
+POST /memories
+```
+
+请求体：
+
+```json
+{
+  "title": "Cloudflare deployment decision",
+  "content": "Memo Otter MVP will use Cloudflare Workers, D1, Vectorize, and Workers AI.",
+  "project": "memo-otter",
+  "scope": "long_term",
+  "type": "decision",
+  "status": "active",
+  "tags": ["mvp", "cloudflare"],
+  "source": "api",
+  "metadata": {
+    "from": "planning"
+  }
+}
+```
+
+### 6.2 输入规则
+
+| 字段 | 规则 |
+| --- | --- |
+| `content` | 必填，trim 后不能为空 |
+| `title` | 可选，trim 后为空则自动生成 |
+| `project` | 可选，trim 后空字符串转 `null` |
+| `scope` | 默认 `long_term`，只允许 `long_term`、`short_term` |
+| `type` | 默认 `note`，允许自定义，规范化为小写短横线 |
+| `status` | 默认 `active`，创建时建议只允许 `draft`、`active`、`canonical` |
+| `tags` | 默认 `[]`，trim、去空、去重 |
+| `source` | 可选，由入口补默认值，Web UI 为 `web`，Skill 为 `skill`，普通 REST 为 `api` |
+| `metadata` | 默认 `{}`，必须是可 JSON 序列化对象 |
+
+标题自动生成建议：
+
+- 从 `content` 去掉首尾空白。
+- 合并连续空白。
+- 取前 40 到 60 个字符。
+- 超长时追加 `...`。
+- 生成结果仍需满足 `title` 入库非空。
+
+### 6.3 流程
+
+```text
+POST /memories
+  -> validate input
+  -> normalize fields
+  -> build memory row
+  -> insert memories with embedding_status = pending
+  -> record create event
+  -> run duplicate/conflict lightweight check
+  -> generate embedding
+  -> upsert Vectorize
+  -> insert memory_embeddings
+  -> update memories.embedding_status = indexed
+  -> record index event
+  -> return create result
+```
+
+### 6.4 索引失败处理
+
+如果 Workers AI 或 Vectorize 失败：
+
+- memory 保留在 D1。
+- `embedding_status` 更新为 `failed`。
+- 写入 `index_failed` event。
+- 响应仍返回 memory。
+- `warnings` 中增加 `index_failed`。
+- HTTP 状态建议仍为 `201 Created`，因为 memory 创建成功；索引失败体现在响应字段里。
+
+D1 插入 memory 失败时，整个请求失败，不触发索引。
+
+### 6.5 创建响应
+
+```json
+{
+  "memory": {
+    "id": "mem_01...",
+    "title": "Cloudflare deployment decision",
+    "project": "memo-otter",
+    "scope": "long_term",
+    "type": "decision",
+    "status": "active",
+    "tags": ["mvp", "cloudflare"],
+    "source": "api",
+    "embeddingStatus": "indexed",
+    "createdAt": "2026-06-02T14:00:00.000Z",
+    "updatedAt": "2026-06-02T14:00:00.000Z",
+    "archivedAt": null,
+    "metadata": {
+      "from": "planning"
+    }
+  },
+  "indexing": {
+    "status": "indexed",
+    "embeddingModel": "@cf/baai/bge-base-en-v1.5",
+    "vectorId": "mem:mem_01...:chunk:0:hash:abc123",
+    "contentHash": "abc123...",
+    "indexedAt": "2026-06-02T14:00:01.000Z",
+    "failure": null
+  },
+  "warnings": []
+}
+```
+
+## 7. 查看 Memory 列表
+
+### 7.1 REST Endpoint
+
+```text
+GET /memories
+```
+
+支持 query 参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `project` | 按 project 精确过滤 |
+| `scope` | 按 `long_term` 或 `short_term` 过滤 |
+| `type` | 按 type 过滤 |
+| `status` | 按 status 过滤 |
+| `tags` | 逗号分隔标签，匹配任一或全部由实现策略决定 |
+| `include_archived` | 默认 `false` |
+| `limit` | 默认 20，最大 100 |
+| `cursor` | 游标分页 |
+| `offset` | 偏移分页，MVP 可先支持 offset |
+
+### 7.2 默认行为
+
+- 默认排除 `status = archived`。
+- 默认按 `updated_at DESC` 排序。
+- 不返回完整 `content`。
+- 返回 `embeddingStatus`，方便 UI 标记 pending、failed、stale。
+
+### 7.3 Tags 过滤策略
+
+D1 中 `tags_json` 是 TEXT，MVP 可以先采用保守实现：
+
+- `tags=a,b` 表示 memory 至少包含其中一个 tag。
+- 使用 JSON 解析后在应用层过滤，避免脆弱的字符串匹配。
+- 为了避免全表扫描过大，先在 D1 里应用 project、scope、type、status、limit 扩大窗口，再应用 tags 过滤。
+- 如果后续数据量变大，再增加 `memory_tags` 表。
+
+### 7.4 列表响应
+
+```json
+{
+  "items": [
+    {
+      "id": "mem_01...",
+      "title": "Cloudflare deployment decision",
+      "project": "memo-otter",
+      "scope": "long_term",
+      "type": "decision",
+      "status": "active",
+      "tags": ["mvp", "cloudflare"],
+      "source": "api",
+      "embeddingStatus": "indexed",
+      "createdAt": "2026-06-02T14:00:00.000Z",
+      "updatedAt": "2026-06-02T14:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "offset": 0,
+    "nextCursor": null,
+    "hasMore": false
+  }
+}
+```
+
+## 8. 查看 Memory 详情
+
+### 8.1 REST Endpoint
+
+```text
+GET /memories/:id
+```
+
+### 8.2 返回内容
+
+详情页需要返回：
+
+- memory 全量字段。
+- 最近的 memory events，默认 20 条。
+- embedding/index 状态。
+
+### 8.3 详情响应
+
+```json
+{
+  "memory": {
+    "id": "mem_01...",
+    "title": "Cloudflare deployment decision",
+    "content": "Memo Otter MVP will use Cloudflare Workers, D1, Vectorize, and Workers AI.",
+    "project": "memo-otter",
+    "scope": "long_term",
+    "type": "decision",
+    "status": "active",
+    "tags": ["mvp", "cloudflare"],
+    "source": "api",
+    "embeddingStatus": "indexed",
+    "createdAt": "2026-06-02T14:00:00.000Z",
+    "updatedAt": "2026-06-02T14:00:00.000Z",
+    "archivedAt": null,
+    "metadata": {
+      "from": "planning"
+    }
+  },
+  "events": [
+    {
+      "id": "evt_01...",
+      "memoryId": "mem_01...",
+      "eventType": "create",
+      "before": null,
+      "after": {
+        "title": "Cloudflare deployment decision",
+        "status": "active"
+      },
+      "source": "api",
+      "createdAt": "2026-06-02T14:00:00.000Z"
+    }
+  ],
+  "indexing": {
+    "status": "indexed",
+    "embeddingModel": "@cf/baai/bge-base-en-v1.5",
+    "vectorId": "mem:mem_01...:chunk:0:hash:abc123",
+    "contentHash": "abc123...",
+    "indexedAt": "2026-06-02T14:00:01.000Z",
+    "failure": null
+  }
+}
+```
+
+### 8.4 Not Found 行为
+
+如果 memory 不存在：
+
+- 返回 `404 Not Found`。
+- 错误体使用统一格式。
+- 不暴露 D1 内部错误。
+
+## 9. 编辑 Memory
+
+### 9.1 REST Endpoint
+
+```text
+PATCH /memories/:id
+```
+
+允许编辑字段：
+
+- `title`
+- `content`
+- `project`
+- `type`
+- `status`
+- `tags`
+- `metadata`
+
+注意：`scope` 在用户需求的编辑字段中没有列出，但数据模型允许更新。MVP 实现可以支持 `scope`，UI 第一版可以先不暴露或放在高级设置中。
+
+### 9.2 普通编辑规则
+
+- 先读取已有 memory。
+- 校验 patch 至少包含一个可编辑字段。
+- 对输入字段做 normalize。
+- 比较变化字段。
+- 没有实际变化时，可以返回当前 memory，并给出空事件或 `warnings`。
+- 有变化时更新 D1。
+- 刷新 `updated_at`。
+- 记录 `update` event。
+
+### 9.3 Content 变化规则
+
+如果 `content` 变化：
+
+- 新 `content` trim 后不能为空。
+- 更新 D1 content。
+- 设置 `embedding_status = stale`。
+- 记录 `update` event，event 只记录变化摘要，不保存完整旧正文。
+- 重新生成 embedding。
+- upsert Vectorize。
+- 写入新的 `memory_embeddings`。
+- 设置 `embedding_status = indexed`。
+- 记录 `index` event。
+
+如果重新索引失败：
+
+- memory 保留新 content。
+- `embedding_status = failed`。
+- 记录 `index_failed` event。
+- 返回 `warnings`。
+
+### 9.4 仅元数据变化规则
+
+如果只更新以下字段，不重新生成 embedding：
+
+- `title`
+- `project`
+- `scope`
+- `type`
+- `status`
+- `tags`
+- `metadata`
+
+原因：
+
+- embedding 基于正文内容。
+- tags、type、project、status 属于过滤和展示元数据。
+- 避免无意义索引写入。
+
+### 9.5 Status 编辑规则
+
+- 普通 `PATCH` 可以在 `draft`、`active`、`canonical` 之间切换。
+- 将 `status` 设为 `archived` 时，推荐 route 层转入归档流程或返回提示使用 `POST /memories/:id/archive`。
+- 从 `archived` 恢复为 `active` 或 `draft` 可作为 MVP+；如果 MVP API 支持，需要明确是否清空 `archived_at`。
+
+### 9.6 Canonical 编辑提示
+
+如果编辑 `status = canonical` 的 memory：
+
+- 不禁止编辑。
+- 响应 `warnings` 增加 `canonical_edit`。
+- UI 可以在提交前提示用户该记忆会影响高可信上下文。
+
+### 9.7 Update Event 内容
+
+`update` event 建议只保存变化字段摘要：
+
+```json
+{
+  "before": {
+    "tags": ["mvp"],
+    "contentHash": "oldhash..."
+  },
+  "after": {
+    "tags": ["mvp", "cloudflare"],
+    "contentHash": "newhash..."
+  }
+}
+```
+
+正文内容不要完整写入 event，避免事件表膨胀。详情页需要正文时直接读 `memories.content`。
+
+### 9.8 编辑响应
+
+```json
+{
+  "memory": {
+    "id": "mem_01...",
+    "title": "Cloudflare-first MVP decision",
+    "content": "Memo Otter MVP will use Cloudflare Workers, D1, Vectorize, and Workers AI.",
+    "project": "memo-otter",
+    "scope": "long_term",
+    "type": "decision",
+    "status": "active",
+    "tags": ["mvp", "cloudflare"],
+    "source": "api",
+    "embeddingStatus": "indexed",
+    "createdAt": "2026-06-02T14:00:00.000Z",
+    "updatedAt": "2026-06-02T14:10:00.000Z",
+    "archivedAt": null,
+    "metadata": {
+      "from": "planning"
+    }
+  },
+  "indexing": {
+    "status": "indexed",
+    "embeddingModel": "@cf/baai/bge-base-en-v1.5",
+    "vectorId": "mem:mem_01...:chunk:0:hash:def456",
+    "contentHash": "def456...",
+    "indexedAt": "2026-06-02T14:10:01.000Z",
+    "failure": null
+  },
+  "warnings": []
+}
+```
+
+## 10. 归档 Memory
+
+### 10.1 REST Endpoint
+
+```text
+POST /memories/:id/archive
+```
+
+请求体可选：
+
+```json
+{
+  "source": "web",
+  "reason": "No longer relevant to MVP"
+}
+```
+
+`reason` 不需要写入 `memories`，可以进入 `archive` event 的 `after`。
+
+### 10.2 处理规则
+
+- 读取 memory。
+- 如果不存在，返回 `404`。
+- 如果已经是 `archived`，返回当前 archived memory，避免重复写事件；也可以返回 `409`，但 MVP 推荐幂等成功。
+- 设置 `status = archived`。
+- 写入 `archived_at = now`。
+- 写入 `updated_at = now`。
+- 记录 `archive` event。
+- 不删除 D1 数据。
+- 不要求删除 Vectorize 向量。
+
+### 10.3 Archive Event 内容
+
+```json
+{
+  "before": {
+    "status": "active",
+    "archivedAt": null
+  },
+  "after": {
+    "status": "archived",
+    "archivedAt": "2026-06-02T14:20:00.000Z",
+    "reason": "No longer relevant to MVP"
+  }
+}
+```
+
+### 10.4 归档响应
+
+```json
+{
+  "memory": {
+    "id": "mem_01...",
+    "title": "Cloudflare-first MVP decision",
+    "project": "memo-otter",
+    "scope": "long_term",
+    "type": "decision",
+    "status": "archived",
+    "tags": ["mvp", "cloudflare"],
+    "source": "api",
+    "embeddingStatus": "indexed",
+    "createdAt": "2026-06-02T14:00:00.000Z",
+    "updatedAt": "2026-06-02T14:20:00.000Z",
+    "archivedAt": "2026-06-02T14:20:00.000Z",
+    "metadata": {
+      "from": "planning"
+    }
+  },
+  "warnings": []
+}
+```
+
+## 11. 轻量重复和冲突提示
+
+创建成功后要求返回“疑似重复或冲突提示”。MVP 不做复杂自动判断，但需要保留接口结构。
+
+### 11.1 第一版启发式
+
+可以按低成本规则实现：
+
+- 同一 project 内 title 完全相同：`possible_duplicate`。
+- 同一 project、同一 type、tags 高度重合：`possible_duplicate`。
+- 编辑 canonical memory：`canonical_edit`。
+- 索引失败：`index_failed`。
+
+### 11.2 后续增强
+
+在语义搜索模块完成后，可以增强为：
+
+- 创建前或创建后用新 memory content 搜索 top 5。
+- 相似度超过阈值时提示疑似重复。
+- 与 canonical memory 高相似但内容明显不同则提示可能冲突。
+
+MVP 中只提示，不自动合并、不自动拒绝、不自动覆盖。
+
+## 12. REST API 汇总
+
+| 方法 | 路径 | 用途 | 默认返回 |
+| --- | --- | --- | --- |
+| `POST` | `/memories` | 创建 memory | memory、indexing、warnings |
+| `GET` | `/memories` | 查看列表 | items、pagination |
+| `GET` | `/memories/:id` | 查看详情 | memory、events、indexing |
+| `PATCH` | `/memories/:id` | 编辑 memory | memory、indexing、warnings |
+| `POST` | `/memories/:id/archive` | 归档 memory | memory、warnings |
+
+所有接口都需要 `Authorization: Bearer <AUTH_TOKEN>`，除非后续明确开放健康检查或静态资源。
+
+## 13. 错误响应
+
+统一错误格式：
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "content is required",
+    "details": {
+      "field": "content"
+    }
+  }
+}
+```
+
+推荐错误码：
+
+| HTTP | code | 场景 |
+| --- | --- | --- |
+| `400` | `invalid_request` | body 或 query 格式错误 |
+| `401` | `unauthorized` | 缺少或错误 token |
+| `404` | `memory_not_found` | memory 不存在 |
+| `409` | `invalid_state_transition` | 非法状态转换 |
+| `413` | `content_too_large` | content 或 metadata 超长 |
+| `500` | `internal_error` | D1 或服务内部错误 |
+
+索引失败不建议直接返回 `500`，因为 memory 写入成功。它应通过 `embeddingStatus`、`indexing.failure` 和 `warnings` 表达。
+
+## 14. Web UI 需求映射
+
+### 14.1 列表页
+
+列表页需要：
+
+- 搜索入口可以后续接入 `/search`。
+- project、scope、type、status、tags 筛选。
+- include archived 开关。
+- memory 列表展示 title、project、type、status、tags、source、created_at、updated_at。
+- 对 `pending`、`failed`、`stale` 索引状态给出轻量标记。
+
+### 14.2 详情页
+
+详情页需要：
+
+- 展示全量字段。
+- 展示 content。
+- 展示最近 events。
+- 展示 embedding/index 状态。
+- 提供编辑入口。
+- 提供归档按钮。
+
+### 14.3 创建 / 编辑表单
+
+表单需要：
+
+- content 必填。
+- title 可选。
+- scope 默认 `long_term`。
+- type 默认 `note`，允许输入自定义类型。
+- status 默认 `active`。
+- tags 支持多标签输入。
+- metadata 可以先用 JSON textarea 或高级折叠区。
+
+## 15. Skill 使用映射
+
+Codex Skill 不需要独立业务逻辑，只需要明确何时调用 REST API。
+
+建议 Skill 将能力命名为：
+
+- `save_memory` -> `POST /memories`
+- `list_memories` -> `GET /memories`
+- `get_memory` -> `GET /memories/:id`
+- `update_memory` -> `PATCH /memories/:id`
+- `archive_memory` -> `POST /memories/:id/archive`
+
+Skill 入口调用写操作时应遵守：
+
+- 只有用户明确要求保存时才创建 memory。
+- 只有用户明确要求修改时才编辑 memory。
+- 归档属于高影响操作，需要明确用户意图。
+- 写入后把 memory id 和索引状态反馈给用户。
+
+## 16. 测试计划
+
+### 16.1 单元测试
+
+- content 为空时创建失败。
+- title 为空时自动生成标题。
+- scope 默认 `long_term`。
+- type 默认 `note`，自定义 type 可通过。
+- status 默认 `active`。
+- tags 默认 `[]`，并去空、去重。
+- metadata 必须可 JSON 序列化。
+- content hash 在同一正文下稳定。
+- content 变化能被检测到。
+
+### 16.2 Repository 测试
+
+- 可以 insert memory。
+- 可以按 id 查询 memory。
+- 可以查询列表并默认排除 archived。
+- `include_archived = true` 时包含 archived。
+- 可以按 project、scope、type、status 过滤。
+- tags_json 能正确序列化和反序列化。
+- metadata_json 能正确序列化和反序列化。
+- archive 更新 status、archived_at、updated_at。
+
+### 16.3 Service 测试
+
+- 创建 memory 会记录 create event。
+- 创建 memory 会触发 embedding/index。
+- 索引成功后 `embedding_status = indexed`。
+- 索引失败后 `embedding_status = failed`，memory 仍存在。
+- 编辑 tags 不触发重新索引。
+- 编辑 content 设置 stale 并触发重新索引。
+- 编辑成功记录 update event。
+- 归档记录 archive event。
+- 已归档 memory 默认不出现在列表。
+
+### 16.4 REST API 测试
+
+- `POST /memories` 可以创建 memory。
+- `GET /memories` 可以看到刚创建的 memory。
+- `GET /memories/:id` 返回完整 content、events、indexing。
+- `PATCH /memories/:id` 可以编辑 content 和 tags。
+- 内容编辑后返回新的 indexing 状态。
+- `POST /memories/:id/archive` 可以归档。
+- 归档后默认列表不显示。
+- `GET /memories?include_archived=true` 可以看到归档 memory。
+- 未认证请求被拒绝。
+
+### 16.5 端到端验收
+
+验收步骤：
+
+1. 通过 Web UI 创建一条 memory。
+2. 在列表中看到该 memory。
+3. 打开详情看到完整 content、events 和索引状态。
+4. 修改 content 和 tags。
+5. 确认 content 修改后触发重新索引。
+6. 归档 memory。
+7. 确认默认列表和搜索不显示 archived memory。
+8. 显式 include archived 后可以再次看到该 memory。
+
+## 17. 实施顺序
+
+建议按以下顺序实现：
+
+1. 实现 `schemas/memory.ts`，完成 create、update、list query 校验和 normalize。
+2. 实现 `memory-repository.ts`，完成 D1 CRUD 和 row/model 映射。
+3. 实现 `event-repository.ts` 和 `event-service.ts`。
+4. 实现 `embedding-repository.ts` 的索引元数据写入和读取。
+5. 实现 `embedding-service.ts` 的同步索引流程和失败处理。
+6. 实现 `memory-service.ts` 的 create、list、get、update、archive。
+7. 实现 `routes/memories.ts`。
+8. 写单元测试和 repository 测试。
+9. 写 REST API 测试。
+10. 接入 Web UI 表单、列表、详情和归档按钮。
+11. 在 Codex Skill 中补充基础管理调用说明。
+12. 完成真实 Cloudflare 资源冒烟测试。
+
+## 18. 验收标准
+
+本模块完成时必须满足：
+
+- 可以创建一条 memory，并在列表中看到。
+- 创建时 content 必填，默认值按规则生效。
+- 创建后返回 memory 基础信息、embedding/index 状态和 warnings。
+- 可以打开详情看到完整字段、最近 events 和 embedding/index 状态。
+- 可以编辑 content、tags 和其他允许字段。
+- 内容编辑后会触发重新索引。
+- 仅元数据编辑不会触发重新索引。
+- 编辑成功后记录 `update` event。
+- 可以归档 memory。
+- 归档后写入 `archived_at` 并记录 `archive` event。
+- 归档后的 memory 默认列表和搜索不显示。
+- 显式 `include_archived = true` 后列表可以显示 archived memory。
+- 所有接口返回结构适合 UI、REST API 和 Skill 使用。
+
+## 19. 主要风险与取舍
+
+### 19.1 同步索引可能让创建变慢
+
+MVP 优先同步索引，便于调试和验收。如果响应延迟影响体验，再改为：
+
+- D1 创建后立即返回 `embedding_status = pending`。
+- 用 `ctx.waitUntil()` 后台索引。
+- UI 轮询详情或列表状态。
+
+### 19.2 Tags 过滤不适合长期全表扫描
+
+MVP 用 JSON 字段可以减少表结构复杂度。数据增长后应考虑：
+
+- 增加 `memory_tags` 表。
+- 给 tag 建索引。
+- 列表查询先按结构化字段缩小范围。
+
+### 19.3 重复和冲突提示第一版不够智能
+
+MVP 先提供 warning 结构和低成本启发式。语义搜索完成后，再用向量相似度增强重复和冲突提示。
+
+### 19.4 Archived 向量暂不删除
+
+不删除 Vectorize 向量可以降低归档流程复杂度。搜索时必须回查 D1 并过滤 archived，避免已归档内容被默认召回。
