@@ -12,7 +12,7 @@
 - CLI capture 工具。
 - 自动从聊天记录中提取记忆。
 
-延后原因：第一版先验证 MCP 和 Web UI 两个入口即可，过多入口会分散开发重心。
+延后原因：第一版先验证 REST API、Web UI 和 Codex Skill 三个最贴近自用场景的入口，过多入口会分散开发重心。
 
 ## 2. 记忆治理类
 
@@ -74,4 +74,14 @@
 - `replace_canonical_memory`
 - `import_memories`
 
-延后原因：这些工具可能破坏或重写用户数据。MVP 先通过 Web UI 或 REST API 做明确用户操作，MCP 第一版只处理保存、搜索和项目上下文召回。
+延后原因：这些工具可能破坏或重写用户数据。MVP 先通过 Web UI 或 REST API 做明确用户操作，未来即使加入 MCP，也不应第一时间暴露这些高风险工具。
+
+## 7. 跨工具协议与自动入口
+
+- MCP endpoint。
+- MCP tools。
+- Hooks 自动捕捉。
+- 会话结束自动总结并保存。
+- git commit 后自动保存候选记忆。
+
+延后原因：MVP 先用 Codex Skill 验证真实自用价值。MCP 用于后续跨工具互操作，Hooks 用于后续自动生成候选记忆，二者都不应早于核心记忆闭环。

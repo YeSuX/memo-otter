@@ -42,8 +42,8 @@ Memo Otter 当前重点是先完成个人 AI 记忆服务的最小闭环，不�
 - Memory 写入。
 - Memory 搜索。
 - Memory 状态管理。
-- MCP 工具。
 - REST API。
+- Codex Skill 使用说明。
 - Web UI。
 - Cloudflare 部署。
 - 数据迁移与初始化。
@@ -77,7 +77,7 @@ MVP 页面建议：
 - Memory 搜索页。
 - Memory 详情页。
 - Memory 新增和编辑页。
-- MCP 调试页。
+- Skill 使用说明页。
 - 部署和连接说明页。
 
 每个页面至少定义：
@@ -109,7 +109,7 @@ Memo Otter 的 MVP 技术方案建议覆盖：
 - Workers AI embedding 调用方式。
 - Memory 领域模型。
 - REST API 路由设计。
-- MCP tools 设计。
+- Codex Skill 使用流程。
 - Web UI 技术栈。
 - 本地开发和调试方式。
 - 部署流程。
@@ -130,7 +130,7 @@ Memo Otter 的 MVP 技术方案建议覆盖：
 - 技术方案文档。
 - 数据库 schema 草案。
 - API 草案。
-- MCP tool 草案。
+- Skill 使用说明草案。
 - 风险和取舍说明。
 
 ## 5. 工作量评估与排期
@@ -145,7 +145,7 @@ Memo Otter 的 MVP 技术方案建议覆盖：
 4. 实现保存 memory。
 5. 实现 embedding 生成和向量写入。
 6. 实现搜索 memory。
-7. 实现 MCP `save_memory` 和 `search_memory`。
+7. 实现 REST `save_memory`、`search_memory` 和 `get_project_context` 对应能力。
 8. 实现最小 Web UI。
 9. 部署到 Cloudflare。
 10. 在真实 AI 编程会话中验证。
@@ -175,7 +175,7 @@ MVP 测试重点：
 - Embedding 是否能生成。
 - Vectorize 是否能写入和搜索。
 - REST API 是否返回稳定结构。
-- MCP tool 是否能被 AI 客户端调用。
+- Codex Skill 是否能指导 Agent 调用 REST API。
 - Web UI 是否能完成浏览、搜索、编辑。
 - 失败时是否有清楚错误信息。
 - 部署后环境变量和绑定是否正确。
@@ -184,7 +184,7 @@ MVP 测试重点：
 
 - 单元测试：核心领域逻辑、数据转换、参数校验。
 - 集成测试：D1、Vectorize、Workers AI 调用链路。
-- 手动测试：MCP 客户端真实调用。
+- 手动测试：真实 Codex 会话中的 Skill 调用。
 - 冒烟测试：部署后保存一条 memory 并搜索回来。
 
 输出物：
@@ -205,7 +205,7 @@ MVP 测试重点：
 3. 实现基础 REST API。
 4. 接入 Workers AI embedding。
 5. 接入 Vectorize。
-6. 实现 MCP Server。
+6. 编写 Codex Skill 使用说明。
 7. 实现 Web UI。
 8. 补充错误处理、日志和测试。
 9. 部署并验证。
@@ -222,7 +222,7 @@ MVP 测试重点：
 
 - 可运行代码。
 - 数据库 migration。
-- API 和 MCP 实现。
+- API 和 Skill 使用说明。
 - Web UI。
 - 测试和本地运行说明。
 
@@ -237,7 +237,7 @@ MVP 测试重点：
 - Workers AI binding 可用。
 - Vectorize index 可写入。
 - REST API 可请求。
-- MCP 客户端可连接。
+- Codex Skill 可在真实会话中使用。
 - Web UI 可完成核心操作。
 
 上线前检查：
@@ -264,7 +264,7 @@ MVP 上线后，不急着加功能，先用它记录 Memo Otter 自己的开发�
 
 - 保存 memory 是否足够顺手。
 - 搜索结果是否有用。
-- MCP 调用是否稳定。
+- Skill 调用流程是否稳定。
 - 哪些字段是多余的。
 - 哪些状态和标签最常用。
 - 哪些错误最影响体验。
@@ -282,7 +282,7 @@ MVP 上线后，不急着加功能，先用它记录 Memo Otter 自己的开发�
 基于现有 PRD，下一步最适合做三件事：
 
 1. 编写 `docs/MVP_SCOPE.md`，明确第一版只做哪些功能。
-2. 编写 `docs/TECHNICAL_DESIGN.md`，确定 Cloudflare、D1、Vectorize、Workers AI、MCP 和 Web UI 的技术方案。
+2. 编写 `docs/TECHNICAL_DESIGN.md`，确定 Cloudflare、D1、Vectorize、Workers AI、REST API、Codex Skill 和 Web UI 的技术方案。
 3. 编写 `docs/TASKS.md`，把 MVP 拆成可以逐项开发的任务列表。
 
 完成这三份文档后，再进入代码初始化会更稳。
@@ -294,3 +294,5 @@ MVP Web UI 的原型与交互设计见：[原型与交互设计](./INTERACTION_D
 MVP 的技术方案设计见：[技术方案设计](./TECHNICAL_DESIGN.md)。
 
 MVP 的测试策略、用例和上线验收标准见：[测试方案](./TEST_PLAN.md)。
+
+当前所有文档的统一口径见：[文档口径基准](./DOCUMENTATION_ALIGNMENT.md)。

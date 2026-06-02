@@ -9,7 +9,7 @@
 Memo Otter MVP 要打通个人 AI 记忆服务的最小闭环：
 
 ```text
-保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 MCP 给 AI 工具使用 -> 在 Web UI 中检查和修正
+保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 REST API / Codex Skill 给 AI 工作流使用 -> 在 Web UI 中检查和修正
 ```
 
 技术方案需要满足：
@@ -18,7 +18,7 @@ Memo Otter MVP 要打通个人 AI 记忆服务的最小闭环：
 - D1 保存可读、可导出的源数据。
 - Vectorize 只作为可重建语义索引。
 - Workers AI 作为 MVP 唯一 embedding provider。
-- MCP 暴露安全、低风险的记忆工具。
+- Codex Skill 指导 Agent 调用安全、低风险的记忆能力。
 - Web UI 与 API 共用同一个 Worker。
 - 第一版尽量少引入复杂后台任务和分布式组件。
 
@@ -35,7 +35,7 @@ Memo Otter MVP 要打通个人 AI 记忆服务的最小闭环：
 - 符合 Cloudflare-first 产品定位。
 - 部署成本低，适合个人工具。
 - Workers 可以通过 bindings 直接访问 D1、Vectorize、Workers AI 等 Cloudflare 资源。
-- 单 Worker 足以支撑 MVP 的 REST API、MCP endpoint 和静态 Web UI。
+- 单 Worker 足以支撑 MVP 的 REST API 和静态 Web UI。
 
 ### 2.2 Web/API 框架
 
@@ -81,15 +81,15 @@ Memo Otter MVP 要打通个人 AI 记忆服务的最小闭环：
 - Workers AI：生成 embedding。
 - Secret `AUTH_TOKEN`：单用户访问控制。
 
-### 2.5 MCP
+### 2.5 AI 入口
 
 推荐：
 
-- 使用官方 MCP TypeScript SDK。
-- 远程 endpoint 采用 Streamable HTTP 思路设计。
-- MVP 暴露 `POST /mcp`。
+- MVP 使用 Codex Skill 作为第一版 AI 入口。
+- Skill 通过说明和规则指导 Agent 调用 REST API。
+- MCP endpoint 延后到 MVP+，用于未来跨工具互操作。
 
-MVP 工具：
+MVP 能力：
 
 - `save_memory`
 - `search_memory`
@@ -97,6 +97,8 @@ MVP 工具：
 
 不进入 MVP：
 
+- MCP endpoint。
+- MCP tools。
 - `delete_memory`
 - `deprecate_memory`
 - `merge_memories`
@@ -106,13 +108,12 @@ MVP 工具：
 ## 3. 总体架构
 
 ```text
-MCP Client / Browser
+Codex / Browser
         |
         v
 Cloudflare Worker
   ├── Web UI static assets
   ├── REST API routes
-  ├── MCP endpoint
   ├── Auth middleware
   ├── Memory service
   ├── Search service
@@ -137,7 +138,7 @@ src/
     search.ts
     export.ts
     health.ts
-    mcp.ts
+    context.ts
   services/
     memory-service.ts
     embedding-service.ts
@@ -148,12 +149,8 @@ src/
     memory-repository.ts
     embedding-repository.ts
     event-repository.ts
-  mcp/
-    server.ts
-    tools/
-      save-memory.ts
-      search-memory.ts
-      get-project-context.ts
+  skill/
+    memo-otter-skill.md
   schemas/
     memory.ts
     search.ts
@@ -168,7 +165,7 @@ src/
 - `routes`：只处理 HTTP 输入输出。
 - `services`：组织业务流程。
 - `repositories`：封装 D1 SQL。
-- `mcp`：封装 MCP server 和 tools。
+- `skill`：保存 Codex Skill 使用说明和示例。
 - `schemas`：输入校验和类型定义。
 - `utils`：认证、错误和响应工具。
 
@@ -187,7 +184,6 @@ src/
 职责：
 
 - 提供 REST API。
-- 提供 MCP endpoint。
 - 托管 Web UI 静态资源。
 - 访问 D1、Vectorize、Workers AI bindings。
 
@@ -449,24 +445,22 @@ Client
 3. 类型权重：`decision`、`preference` 优先。
 4. `updated_at` 作为轻量 tie-breaker。
 
-## 7.5 MCP 调用
+## 7.5 Skill 调用
 
 ```text
-MCP Client
-  -> POST /mcp
-  -> auth
-  -> MCP server route
-  -> tool handler
+Codex Agent
+  -> reads Memo Otter Skill
+  -> calls REST API with AUTH_TOKEN
   -> service layer
   -> D1 / Vectorize / Workers AI
-  -> MCP response
+  -> REST response
 ```
 
 原则：
 
-- MCP tools 复用 service layer，不另写一套业务逻辑。
-- MCP 返回要简洁，但必须包含 memory id、status、project、type 等可追踪信息。
-- 高风险写操作不暴露给 MCP。
+- Skill 不实现独立业务逻辑，只指导 Agent 调用 REST API。
+- REST 返回要简洁，但必须包含 memory id、status、project、type 等可追踪信息。
+- 高风险写操作不暴露给 AI 入口。
 
 ## 8. REST API 设计
 
@@ -483,7 +477,7 @@ MVP 私有接口：
 - `/memories`
 - `/search`
 - `/export`
-- `/mcp`
+- `/context/:project`
 
 `/health`：
 
@@ -593,17 +587,21 @@ MVP 私有接口：
 - `memory_events`
 - `memory_embeddings`
 
-### `POST /mcp`
+### `GET /context/:project`
 
 用途：
 
-- MCP Streamable HTTP endpoint。
+- 返回某个 project 的关键上下文，供 Web UI 和 Codex Skill 使用。
 
 响应：
 
-- MCP JSON-RPC response。
+- `project`
+- `decisions`
+- `preferences`
+- `context`
+- `notes`
 
-## 9. MCP 工具设计
+## 9. AI 入口能力设计
 
 ## 9.1 `save_memory`
 
@@ -621,11 +619,11 @@ MVP 私有接口：
 
 - `type = note`
 - `status = active`
-- `source = mcp`
+- `source = skill`
 
 行为：
 
-- 创建 memory。
+- 通过 REST API 创建 memory。
 - 生成 embedding。
 - 写入 Vectorize。
 - 返回 memory id 和索引状态。
@@ -725,7 +723,7 @@ MVP 只做轻量规则：
 MVP 使用单一 bearer token：
 
 - token 存在 Cloudflare Secret `AUTH_TOKEN`。
-- 所有私有 API 和 MCP endpoint 校验 token。
+- 所有私有 API 校验 token。
 - Web UI 需要用户输入 token 或通过部署者本地配置访问。
 
 ## 11.2 安全规则
@@ -753,7 +751,7 @@ MVP 不提供物理删除。
 - Memories 工作台。
 - New Memory。
 - Memory Detail/Edit。
-- MCP Setup。
+- Skill Setup。
 - Export。
 
 ## 12.2 状态管理
@@ -820,7 +818,7 @@ UI 必须区分：
 - 本地执行 D1 migration。
 - 远程或本地测试 Workers AI 和 Vectorize。
 - 用 REST API 保存和搜索一条测试 memory。
-- 用 MCP 客户端或 Inspector 调试 tools。
+- 在真实 Codex 会话中调试 Skill 调用流程。
 
 ## 14. 测试方案
 
@@ -856,9 +854,9 @@ UI 必须区分：
 5. embedding 生成成功。
 6. Vectorize 写入成功。
 7. 自然语言搜索可以召回它。
-8. MCP `save_memory` 可用。
-9. MCP `search_memory` 可用。
-10. MCP `get_project_context` 可用。
+8. REST `get_project_context` 能返回项目上下文。
+9. Codex Skill 能指导 Agent 保存 memory。
+10. Codex Skill 能指导 Agent 搜索 memory。
 11. 归档后默认搜索不到。
 12. JSON export 可用。
 
@@ -897,16 +895,16 @@ run smoke test
 
 ## 16. 风险与取舍
 
-## 16.1 MCP Streamable HTTP 兼容性
+## 16.1 AI 入口演进
 
 风险：
 
-- 不同客户端对远程 MCP 支持程度可能不一致。
+- Skill 入口优先服务 Codex，自带跨工具能力不足。
 
 取舍：
 
-- 技术方案按 Streamable HTTP 方向设计。
-- 开发前需要用目标客户端确认最小连接方式。
+- MVP 先验证真实自用价值。
+- MCP 延后到 MVP+，等核心服务稳定后再补跨工具协议。
 
 ## 16.2 Workers AI 和 Vectorize 本地开发
 
@@ -964,7 +962,7 @@ MVP 技术实现完成必须满足：
 - 未认证请求无法访问私有数据。
 - Web UI 可以创建、搜索、编辑、归档 memory。
 - REST API 可以完成主链路。
-- MCP 三个工具可用。
+- Codex Skill 可以在真实会话中指导 Agent 使用保存、搜索和项目上下文能力。
 - 保存 memory 后 D1 有源数据。
 - 保存 memory 后 Vectorize 有向量。
 - 搜索能召回刚保存的 memory。
@@ -983,6 +981,8 @@ MVP 后再考虑：
 - 多 embedding provider。
 - Queue 异步索引。
 - reindex 命令。
+- MCP endpoint 和 MCP tools。
+- Hooks 自动生成候选记忆。
 - 浏览器 capture。
 - Obsidian 插件。
 - Markdown 文件夹同步。
@@ -992,5 +992,5 @@ MVP 后再考虑：
 - Cloudflare Workers bindings 文档：https://developers.cloudflare.com/workers/runtime-apis/bindings/
 - Cloudflare Vectorize + Workers AI 文档：https://developers.cloudflare.com/vectorize/get-started/embeddings/
 - Cloudflare Vectorize Client API：https://developers.cloudflare.com/vectorize/reference/client-api/
-- MCP SDK 文档：https://modelcontextprotocol.io/docs/sdk
-- MCP transports 规范：https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
+- MCP SDK 文档，供 MVP+ 参考：https://modelcontextprotocol.io/docs/sdk
+- MCP transports 规范，供 MVP+ 参考：https://modelcontextprotocol.io/specification/2025-06-18/basic/transports

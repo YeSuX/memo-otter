@@ -4,21 +4,22 @@
 
 ## 1. 必须在开发前回答
 
-### 1.1 MCP endpoint 传输方式
+### 1.1 Codex Skill 使用方式
 
-问题：MVP 的 `/mcp` endpoint 使用哪种 MCP transport？
+问题：MVP 的 Codex Skill 应如何指导 Agent 使用 Memo Otter？
 
 需要确认：
 
-- 目标客户端优先支持哪种连接方式。
-- Cloudflare Worker 环境下实现成本最低的方案。
-- 本地开发如何调试。
+- Skill 放在项目仓库内，还是作为本机 Codex skill 安装。
+- Skill 调用 REST API 时如何配置 endpoint 和 token。
+- 什么时候允许 Agent 保存 memory。
+- 什么时候只允许 Agent 生成候选记忆并等待用户确认。
 
 决策影响：
 
-- 影响依赖选择。
-- 影响 Worker 路由结构。
-- 影响部署和连接文档。
+- 影响 onboarding。
+- 影响安全边界。
+- 影响真实 Codex 会话中的使用体验。
 
 ### 1.2 Embedding 模型和 Vectorize 维度
 
@@ -39,12 +40,12 @@
 
 ### 1.3 认证方式
 
-问题：单一 bearer token 如何保护 REST API、Web UI 和 MCP？
+问题：单一 bearer token 如何保护 REST API、Web UI 和 Skill 调用？
 
 需要确认：
 
 - Web UI 如何输入或保存 token。
-- MCP 客户端如何配置 token。
+- Codex Skill 或 Agent 如何配置 token。
 - `/health` 是否需要认证。
 - CORS 策略如何处理。
 
@@ -90,12 +91,14 @@
 ## 2. 已通过评审确定的决策
 
 - MVP 只使用 Workers AI embedding，不接 OpenAI embedding provider。
-- MVP UI 和 MCP Server 放在同一个 Worker。
+- MVP UI 和 REST API 放在同一个 Worker。
 - MVP project 使用自由文本，不做独立项目实体。
 - MVP 不自动删除、覆盖或合并 canonical 记忆。
 - MVP 默认排除 archived memory。
 - MVP 不做 Markdown 文件夹同步。
 - MVP 不做浏览器扩展、Obsidian 插件、移动端、多用户协作。
+- MVP 不实现 MCP endpoint。
+- MVP 不实现 Hooks 自动捕捉。
 
 ## 3. 延后到 MVP 后的问题
 
@@ -107,3 +110,5 @@
 - 是否支持 Markdown 文件夹同步。
 - 是否支持浏览器 capture。
 - 是否支持时间线和知识图谱。
+- 是否实现 MCP endpoint 和 MCP tools。
+- 是否实现 Hooks 自动生成候选记忆。

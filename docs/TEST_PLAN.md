@@ -10,7 +10,7 @@ MVP 需要验证的主链路：
 保存记忆 -> D1 保存源数据 -> Workers AI 生成 embedding -> Vectorize 写入向量 -> 语义搜索召回 -> Web UI 检查和修正 -> AI 入口调用
 ```
 
-其中 AI 入口可以是 MCP、Skill 或 Hooks，但测试策略应优先保证核心服务稳定，再验证具体入口。
+其中 MVP 的 AI 入口是 Codex Skill。MCP 作为 MVP+ 的跨工具接口延后，Hooks 作为 Post-MVP 的自动候选记忆入口延后。
 
 ## 1. 测试目标
 
@@ -76,7 +76,7 @@ MVP 测试要证明：
 
 AI 入口测试单独作为第 7 层：
 
-7. MCP / Skill / Hooks 入口测试。
+7. Skill 入口测试。
 
 ## 4. 测试环境
 
@@ -104,7 +104,7 @@ AI 入口测试单独作为第 7 层：
 - Vectorize 真实写入和查询。
 - D1 远端 migration。
 - Worker 部署冒烟。
-- MCP 远程 endpoint 验证。
+- Codex Skill 真实会话验证。
 
 特点：
 
@@ -168,7 +168,7 @@ Memo Otter MVP uses Cloudflare Workers, D1, Vectorize, and Workers AI.
 验收：
 
 - Web UI 默认 source 是 `web`。
-- AI 入口默认 source 是 `mcp`、`skill` 或对应入口名。
+- AI 入口默认 source 是 `skill`。
 
 ### 5.3 状态转换
 
@@ -516,6 +516,23 @@ D1 写入成功
 - 包含 `exported_at`。
 - 包含 `schema_version`。
 
+### 8.10 `GET /context/:project`
+
+测试点：
+
+- 存在 project。
+- 不存在 project。
+- canonical memory 优先。
+- active memory 参与。
+- archived memory 默认排除。
+- 按 type 分组。
+
+验收：
+
+- 返回 project 上下文结构。
+- 结果包含 decisions、preferences、context、notes。
+- 可供 Codex Skill 直接使用。
+
 ## 9. Web UI 测试
 
 ### 9.1 首次使用
@@ -593,33 +610,19 @@ D1 写入成功
 
 - 用户理解归档不是删除。
 
-### 9.6 MCP / Skill Setup 页面
-
-根据最终入口选择测试：
-
-如果 MVP 使用 MCP：
-
-- 显示 MCP endpoint。
-- 显示 token 配置方式。
-- 显示 `save_memory`、`search_memory`、`get_project_context`。
-- 不暴露真实 token。
-
-如果 MVP 使用 Skill：
+### 9.6 Skill Setup 页面
 
 - 显示 Skill 使用说明。
+- 显示 REST API endpoint。
+- 显示 token 配置方式。
 - 显示何时保存 memory。
 - 显示何时搜索 memory。
 - 显示不要自动保存敏感信息的规则。
-
-如果 MVP 使用 Hooks：
-
-- 显示 hook 触发条件。
-- 显示用户确认步骤。
-- 不允许静默写入长期记忆。
+- 不暴露真实 token。
 
 验收：
 
-- 用户能理解当前入口如何连接核心服务。
+- 用户能理解 Codex Skill 如何连接核心服务。
 
 ### 9.7 Export 页面
 
@@ -636,32 +639,9 @@ D1 写入成功
 
 ## 10. AI 入口测试
 
-### 10.1 MCP 入口测试
+### 10.1 Skill 入口测试
 
-适用于 MVP 保留 MCP 的情况。
-
-工具：
-
-- `save_memory`
-- `search_memory`
-- `get_project_context`
-
-测试用例：
-
-- MCP 客户端未带 token，请求失败。
-- MCP `save_memory` 保存一条 decision。
-- Web UI 能看到该 memory。
-- MCP `search_memory` 能搜索到该 memory。
-- MCP `get_project_context` 返回 project 下 canonical 和 active memory。
-- MCP 不提供 delete/deprecate/merge 等高风险工具。
-
-验收：
-
-- 至少一个真实 MCP 客户端完成保存和搜索。
-
-### 10.2 Skill 入口测试
-
-适用于 MVP 改为 Skill 优先的情况。
+适用于 MVP 的 Codex Skill 入口。
 
 测试点：
 
@@ -679,9 +659,9 @@ D1 写入成功
   - 保存一条开发决策。
   - 搜索刚保存的决策。
 
-### 10.3 Hooks 入口测试
+### 10.2 Hooks 入口测试
 
-适用于后续引入 hooks 的情况。
+适用于 Post-MVP 后续引入 hooks 的情况。
 
 测试点：
 
@@ -782,11 +762,12 @@ MVP 不做重型压测，但需要基本可靠性检查。
 8. 用自然语言搜索召回 memory。
 9. 编辑 memory content。
 10. 再次搜索召回新内容。
-11. 归档 memory。
-12. 默认搜索不返回 archived memory。
-13. include archived 可以返回。
-14. JSON export 成功。
-15. AI 入口保存或搜索成功。
+11. REST `get_project_context` 返回项目上下文。
+12. Codex Skill 能指导 Agent 保存或搜索 memory。
+13. 归档 memory。
+14. 默认搜索不返回 archived memory。
+15. include archived 可以返回。
+16. JSON export 成功。
 
 冒烟测试通过后，才认为部署可用。
 
@@ -878,11 +859,10 @@ MVP 可以上线试用，需要满足：
 MVP 后可以增加：
 
 - Playwright E2E 自动化。
-- MCP Inspector 自动化测试。
 - Skill 行为测试脚本。
 - Hooks 用户确认流程测试。
+- MCP Inspector 自动化测试。
 - reindex 测试。
 - import/export round-trip 测试。
 - 多 provider 搜索质量对比。
 - 记忆召回质量评估集。
-

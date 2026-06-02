@@ -4,12 +4,12 @@
 
 Memo Otter 是一个部署在 Cloudflare 上的个人 AI 记忆服务，面向经常使用 Codex、Cursor、Claude、ChatGPT 等 AI 工具的独立开发者。
 
-它帮助用户把项目决策、个人偏好、技术上下文、学习笔记、Prompt 模板和想法碎片保存到一个由自己拥有的记忆库里，然后通过 MCP 或 Web UI 在不同 AI 工具中召回这些上下文。
+它帮助用户把项目决策、个人偏好、技术上下文、学习笔记、Prompt 模板和想法碎片保存到一个由自己拥有的记忆库里，然后通过 REST API、Web UI 和 Codex Skill 在 AI 编程工作流中召回这些上下文。
 
 这个项目不以商业盈利为主要目标。它的核心目标是：
 
 - 做出一个自己真的会用的个人 AI 基础设施。
-- 学习 MCP、Cloudflare Workers、D1、Vectorize、Workers AI、语义检索、记忆冲突处理等 AI 应用开发能力。
+- 学习 Cloudflare Workers、D1、Vectorize、Workers AI、语义检索、Skill 工作流、记忆冲突处理等 AI 应用开发能力。
 - 形成一个足够小、足够清晰、足够可迭代的开源项目。
 
 ## 2. 背景与竞品分析
@@ -104,7 +104,7 @@ Memo Otter 的第一阶段重点应该是：
 - 学习友好：每个模块都尽量清楚，适合独立开发者理解和改造。
 - 记忆状态明确：第一版区分 draft、active、canonical、archived。
 - 冲突处理可解释：第一版只提示疑似重复或冲突，不自动替换。
-- 先把核心闭环做好：保存、搜索、MCP 调用、Web UI 管理。
+- 先把核心闭环做好：保存、搜索、REST API 调用、Web UI 管理、Codex Skill 使用。
 
 第一版不急着做：
 
@@ -123,7 +123,7 @@ Memo Otter 希望成为独立开发者自己的 AI 记忆层。
 
 - 一个部署在 Cloudflare 上、由用户自己拥有的个人记忆服务。
 - 一个面向项目、偏好和决策的语义搜索引擎。
-- 一个能被 AI 工具随时调用的 MCP Server。
+- 一个能被 AI 工作流调用的个人上下文服务。
 - 一个学习 AI-native 应用开发的实验场。
 
 它不应该像：
@@ -178,10 +178,10 @@ Memo Otter 要解决的核心问题是：让个人上下文既能被人编辑，
 ### 6.1 产品目标
 
 - 提供一个部署在 Cloudflare 上、由用户自己拥有的 AI 记忆服务。
-- 通过 MCP 暴露记忆操作能力。
+- 通过 REST API 暴露记忆操作能力，并用 Codex Skill 指导 AI 调用。
 - 提供简单 Web UI，用于浏览、搜索、编辑和检查冲突提示。
 - 支持带元数据的语义召回。
-- 帮助用户学习 Cloudflare Workers、D1、Vectorize、Workers AI 和 MCP。
+- 帮助用户学习 Cloudflare Workers、D1、Vectorize、Workers AI 和 AI 工作流集成。
 - 显式管理记忆状态：MVP 支持 draft、active、canonical、archived。
 - 支持安全的记忆演化：MVP 先支持 create、update、archive，append、replace、merge、deprecate、delete 延后。
 
@@ -284,23 +284,25 @@ Memo Otter 应该提示冲突，并让用户选择：
 
 ### 7.6 AI 工具集成
 
-在 MCP 兼容客户端中，AI 可以调用：
+在 Codex 或其他 Agent 工作流中，AI 可以通过 Skill 指导调用 REST API 完成：
 
 - `save_memory`
 - `search_memory`
 - `get_project_context`
 
-删除、废弃、覆盖 canonical 记忆等高风险操作不进入 MVP MCP 工具。第一版优先确保 AI 能保存、搜索和召回项目上下文。
+删除、废弃、覆盖 canonical 记忆等高风险操作不进入 MVP AI 入口。第一版优先确保 AI 能在用户明确意图下保存、搜索和召回项目上下文。
 
 ## 8. MVP 范围
 
 经过 PRD 评审后，Memo Otter 的 MVP 收敛为一个最小可用闭环：
 
 ```text
-保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 MCP 给 AI 工具使用 -> 在 Web UI 中检查和修正
+保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 REST API / Codex Skill 给 AI 工作流使用 -> 在 Web UI 中检查和修正
 ```
 
 MVP 的完整边界见：[MVP 范围](./MVP_SCOPE.md)。
+
+MVP 入口策略：REST API 和 Web UI 是核心入口，Codex Skill 是第一版 AI 使用入口。MCP 作为 MVP+ 的跨工具标准接口延后，Hooks 作为 Post-MVP 的自动候选记忆入口延后。
 
 ### 8.1 功能需求
 
@@ -342,15 +344,15 @@ MVP 支持以下状态：
 - 默认排除 archived 记忆。
 - 支持按项目、状态、类型和标签过滤。
 
-#### MCP Server
+#### AI 入口
 
-MVP 暴露以下 MCP 工具：
+MVP 提供 Codex Skill 使用说明，指导 Agent 通过 REST API 使用以下产品能力：
 
 - `save_memory`
 - `search_memory`
 - `get_project_context`
 
-删除、废弃、合并、替换 canonical 记忆等高风险能力不进入第一版 MCP 工具。第一版中这些操作应留在 Web UI 或 REST API 中，由用户明确触发。
+删除、废弃、合并、替换 canonical 记忆等高风险能力不进入第一版 AI 入口。第一版中这些操作应留在 Web UI 或 REST API 中，由用户明确触发。
 
 #### Web UI
 
@@ -363,7 +365,7 @@ MVP Web UI 包含：
 - 状态筛选。
 - 记忆编辑器。
 - 归档操作。
-- MCP 连接说明。
+- Skill 使用说明。
 
 冲突处理面板、复杂统计和 dashboard 延后。
 
@@ -408,8 +410,8 @@ JSON import 延后。
 
 - 运行环境：Cloudflare Workers。
 - 包管理器：pnpm。
-- MCP：官方 TypeScript MCP SDK。
-- API：Worker fetch handler、Hono，或在 MCP 路由需要时考虑 Cloudflare Agents SDK。
+- AI 入口：Codex Skill 使用说明，调用 REST API。
+- API：Hono 或 Worker fetch handler。
 - 数据库：Cloudflare D1。
 - SQL 层：Drizzle 或直接 SQL。
 - Embedding：默认使用 Workers AI，并预留 provider 抽象。
@@ -425,17 +427,17 @@ MVP 应部署到用户自己的 Cloudflare 账户。
 
 所需 Cloudflare 资源：
 
-- Worker：提供 REST API、MCP endpoint，并可选托管静态 UI。
+- Worker：提供 REST API，并可选托管静态 UI。
 - D1 database：保存记忆、事件、标签和项目元数据。
 - Vectorize index：保存 embedding，用于语义召回。
 - Workers AI binding：生成 embedding。
-- Secret `AUTH_TOKEN`：保护私有 API 和 MCP 访问。
+- Secret `AUTH_TOKEN`：保护私有 API 和 Web UI 访问。
 
 推荐 endpoint：
 
-- `/mcp`：AI 客户端使用的 MCP endpoint。
 - `/search`：供 UI 和调试使用的搜索 endpoint。
 - `/memories`：记忆列表、创建、查看、更新、归档。
+- `/context/:project`：供 Skill 或 UI 获取项目上下文。
 - `/export`：导出 JSON 备份。
 - `/health`：部署和 binding 检查。
 
@@ -444,7 +446,7 @@ MVP 应部署到用户自己的 Cloudflare 账户。
 - `wrangler deploy` 可以成功发布 Worker。
 - D1 migration 可以通过一条明确命令执行。
 - `wrangler.toml` 中记录 Vectorize index 名称和维度。
-- 新部署实例可以保存一条记忆、语义搜索到它，并通过 MCP 返回它。
+- 新部署实例可以保存一条记忆、语义搜索到它，并通过 REST API 返回项目上下文。
 - 私有 endpoint 会拒绝未认证请求。
 - 用户不需要进入 Cloudflare Dashboard，也能导出记忆数据。
 
@@ -502,12 +504,12 @@ MVP 的检索排序结合：
 
 第一版不建议做太强的时间衰减。决策和偏好可能很旧，但依然重要，不应因为时间久就被埋掉。
 
-### 9.5 MCP 工具设计
+### 9.5 AI 入口能力设计
 
 `save_memory`
 
 - 输入：title、content、project、type、status、tags、source。
-- 行为：保存记忆，生成 embedding，返回 ID 和重复/冲突提醒。
+- 行为：通过 REST API 保存记忆，生成 embedding，返回 ID 和重复/冲突提醒。
 
 `search_memory`
 
@@ -519,7 +521,7 @@ MVP 的检索排序结合：
 - 输入：project、limit。
 - 行为：按类型分组返回 canonical 和 active 记忆。
 
-`list_recent_memories`、`update_memory`、`deprecate_memory`、`delete_memory` 不进入 MVP MCP 工具，延后到用户对高风险操作边界更清楚之后再加入。
+`list_recent_memories`、`update_memory`、`deprecate_memory`、`delete_memory` 不进入 MVP AI 入口，延后到用户对高风险操作边界更清楚之后再加入。
 
 ## 10. 用户体验原则
 
@@ -528,18 +530,18 @@ MVP 的检索排序结合：
 - UI 应安静、实用，偏开发者工具，而不是营销页。
 - 搜索结果要像证据，而不是魔法答案。
 - 每条记忆都应该容易编辑。
-- 即使 MCP 尚未配置，用户也能在 Web UI 中复制项目上下文。
-- Onboarding 要短：创建第一条记忆、搜索它、连接 MCP。
+- 即使 Skill 尚未配置，用户也能在 Web UI 中复制项目上下文。
+- Onboarding 要短：创建第一条记忆、搜索它、配置 Skill。
 
 ## 11. 成功指标
 
 因为项目不以盈利为目标，成功指标应围绕实用性和学习效果：
 
-- 用户可以把 Memo Otter 连接到至少一个 MCP 客户端。
+- 用户可以在至少一次真实 Codex 会话中通过 Skill 使用 Memo Otter。
 - 用户可以在一分钟内保存并召回项目上下文。
 - 用户在至少三次真实编程会话中使用它。
 - 用户可以理解 D1 schema 和导出的记忆数据。
-- 用户能够解释 MCP tools、Cloudflare Workers、D1、Vectorize、Workers AI、embedding、向量检索和记忆冲突处理。
+- 用户能够解释 Cloudflare Workers、D1、Vectorize、Workers AI、embedding、向量检索、Skill 工作流和记忆冲突处理。
 - MVP 阶段至少能在真实会话中稳定保存和召回 3 条 Memo Otter 项目记忆。
 - 当积累足够记忆后，再用常见个人/项目查询的有效召回率作为质量指标。
 
@@ -569,11 +571,11 @@ MVP 的检索排序结合：
 - 实现带过滤条件的搜索。
 - 实现疑似重复检测。
 
-### Milestone 3：MCP Server
+### Milestone 3：AI 入口
 
-- 实现 MCP tools。
-- 部署 `/mcp` endpoint。
-- 连接一个 MCP 兼容客户端。
+- 编写 Codex Skill 使用说明。
+- 明确 Skill 调用 REST API 的保存、搜索和项目上下文流程。
+- 在真实 Codex 会话中完成保存和搜索。
 - 添加 `save_memory`、`search_memory`、`get_project_context` 示例。
 
 ### Milestone 4：Web UI
@@ -583,7 +585,7 @@ MVP 的检索排序结合：
 - 筛选。
 - 编辑器。
 - 归档。
-- MCP 连接说明。
+- Skill 使用说明。
 
 ### Milestone 5：记忆质量
 
@@ -627,13 +629,13 @@ MVP 的检索排序结合：
 - 聚焦 AI 有用的长期上下文，而不是通用笔记管理。
 - 暂缓富文本、文件夹、双链、发布等能力。
 
-### 13.4 MCP 调试困难
+### 13.4 AI 入口调试困难
 
 缓解方式：
 
 - 增加 debug REST endpoint。
 - 在开发环境中记录清晰请求日志。
-- 提供示例 tool call。
+- 提供 Skill 使用示例和 REST 调用示例。
 
 ### 13.5 Embedding provider 锁定
 
@@ -659,12 +661,14 @@ MVP 上线前必须回答的问题见：[开放问题](./OPEN_QUESTIONS.md)。
 已通过 PRD 评审确定：
 
 - 第一版只使用 Workers AI embedding，不接 OpenAI embedding provider。
-- UI 和 MCP Server 放在同一个 Worker。
+- UI 和 REST API 放在同一个 Worker。
 - project 使用自由文本，不做独立管理实体。
 - 不自动删除、覆盖或合并 canonical 记忆。
 - archived 记忆默认不参与搜索。
 - Markdown 文件夹同步延后。
 - 浏览器扩展、Obsidian 插件、移动端、多用户协作均不进入第一版。
+- MCP endpoint 延后到 MVP+。
+- Hooks 自动捕捉延后到 Post-MVP。
 
 延后需求清单见：[延后需求](./DEFERRED_REQUIREMENTS.md)。
 
@@ -676,8 +680,8 @@ MVP 上线前必须回答的问题见：[开放问题](./OPEN_QUESTIONS.md)。
 2. 在 D1 中保存一条 memory。
 3. 用 Workers AI 生成 embedding。
 4. 把向量插入 Vectorize，并能搜索回来。
-5. 通过 MCP 暴露 `save_memory` 和 `search_memory`。
-6. 部署到 Cloudflare，并在一次真实 AI 编程会话中使用。
+5. 通过 REST API 暴露 `save_memory`、`search_memory` 和 `get_project_context` 对应能力。
+6. 编写 Codex Skill 使用说明，并在一次真实 AI 编程会话中使用。
 
 第一版应该先让 Memo Otter 记住 Memo Otter 自己的开发决策。它不需要一开始记住全世界，先记住自己的来路就够了。
 

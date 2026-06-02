@@ -17,7 +17,7 @@ MVP 的界面只服务五件事：
 2. 快速搜索已有记忆。
 3. 看懂一条记忆为什么重要。
 4. 修正记忆内容和元数据。
-5. 知道如何把 Memo Otter 连接到 MCP 客户端。
+5. 知道如何让 Codex Skill 使用 Memo Otter。
 
 第一版 UI 不追求视觉惊艳，也不追求完整知识库体验。它要让用户在真实 AI 编程会话中少解释几遍项目背景，这就够了。
 
@@ -56,7 +56,7 @@ MVP Web UI 建议包含 5 个主区域：
 1. Memories
 2. Search
 3. New Memory
-4. MCP Setup
+4. Skill Setup
 5. Export
 
 推荐导航结构：
@@ -69,7 +69,7 @@ Memo Otter
 │   └── Edit
 ├── Search
 ├── New Memory
-├── MCP Setup
+├── Skill Setup
 └── Export
 ```
 
@@ -88,7 +88,7 @@ Memo Otter
 │ Memories     │ Search / List / Form         │ Selected Memory      │
 │ Search       │                              │ Metadata / Events    │
 │ New          │                              │ Actions              │
-│ MCP Setup    │                              │                      │
+│ Skill Setup  │                              │                      │
 │ Export       │                              │                      │
 └──────────────┴──────────────────────────────┴──────────────────────┘
 ```
@@ -98,7 +98,7 @@ Memo Otter
 - 左侧是稳定导航和项目筛选。
 - 中间是主要工作区，用于搜索、列表和表单。
 - 右侧是详情面板，用于查看选中 memory。
-- 如果没有选中 memory，右侧显示 MCP 连接状态或最近保存结果。
+- 如果没有选中 memory，右侧显示 Skill 使用提示或最近保存结果。
 
 ### 4.2 移动端布局
 
@@ -457,18 +457,19 @@ Selected result detail
 
 示例只在空状态显示，不做复杂推荐系统。
 
-## 5.6 MCP Setup 页面
+## 5.6 Skill Setup 页面
 
 ### 页面目标
 
-让用户知道如何把 Memo Otter 接入 MCP 客户端，并理解当前暴露了哪些工具。
+让用户知道如何让 Codex Skill 使用 Memo Otter，并理解当前允许 AI 调用哪些低风险能力。
 
 ### 页面内容
 
-- MCP endpoint。
+- REST API endpoint。
 - Token 配置说明。
-- 可用工具列表。
-- 最小连接示例说明。
+- Codex Skill 使用说明。
+- 可用能力列表。
+- 最小调用示例说明。
 - 冒烟测试步骤。
 
 ### 工具说明
@@ -491,8 +492,8 @@ Selected result detail
 ### 交互规则
 
 - Token 默认不明文展示。
-- 提供复制 endpoint 的操作。
-- 提供复制配置片段的操作，但不在 UI 中暴露真实 token。
+- 提供复制 REST API endpoint 的操作。
+- 提供复制 Skill 配置片段或说明的操作，但不在 UI 中暴露真实 token。
 - 如果 `/health` 检查失败，显示绑定缺失或认证问题。
 
 ## 5.7 Export 页面
@@ -537,14 +538,14 @@ Selected result detail
 -> 创建第一条 memory
 -> 保存成功
 -> 搜索刚保存的 memory
--> 打开 MCP Setup
--> 连接 MCP 客户端
+-> 打开 Skill Setup
+-> 在 Codex 会话中按 Skill 说明调用 Memo Otter
 ```
 
 验收重点：
 
 - 用户不需要阅读大量说明也能保存第一条 memory。
-- 创建、搜索、连接 MCP 三件事路径清楚。
+- 创建、搜索、配置 Skill 三件事路径清楚。
 
 ## 6.2 保存一条开发决策
 
@@ -648,7 +649,7 @@ No memories yet.
 建议操作：
 
 - New memory
-- Open MCP setup
+- Open Skill setup
 
 搜索无结果：
 
@@ -699,7 +700,7 @@ Unauthorized：
 - Memories
 - Search
 - New
-- MCP Setup
+- Skill Setup
 - Export
 
 当前页面高亮要明显，但不夸张。
@@ -831,7 +832,7 @@ Embedding status 不应该和 memory status 混淆，需要单独展示。
 - 用户能看到 memory 的 type、status、project、tags。
 - 用户能看到 embedding/index 状态。
 - 用户能理解 canonical 和 archived 的区别。
-- 用户能找到 MCP endpoint 和工具说明。
+- 用户能找到 REST API endpoint、Skill 使用说明和可用能力说明。
 - 用户能导出 JSON。
 - 所有失败状态都有可读反馈。
 - 页面没有营销化 hero 或装饰性 dashboard。

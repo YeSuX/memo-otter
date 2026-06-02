@@ -3,16 +3,24 @@
 Memo Otter MVP 的目标是打通个人 AI 记忆服务的最小可用闭环：
 
 ```text
-保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 MCP 给 AI 工具使用 -> 在 Web UI 中检查和修正
+保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 REST API / Codex Skill 给 AI 工作流使用 -> 在 Web UI 中检查和修正
 ```
 
 第一版不追求完整知识库体验，也不追求复杂自动化记忆治理。它只需要证明一件事：Memo Otter 能在真实 AI 编程会话中保存和召回有用上下文。
+
+MVP 入口策略：
+
+- REST API 是核心能力入口。
+- Web UI 是人工检查和修正入口。
+- Codex Skill 是第一版 AI 使用入口，用来指导 Agent 何时调用 REST API 保存、搜索和获取项目上下文。
+- MCP 作为 MVP+ 的跨工具标准接口延后。
+- Hooks 作为 Post-MVP 的自动候选记忆入口延后。
 
 ## 1. MVP 目标
 
 - 用户可以把 Memo Otter 部署到自己的 Cloudflare 账户。
 - 用户可以通过 Web UI 保存、搜索、编辑和归档记忆。
-- 用户可以通过 MCP 客户端保存和搜索记忆。
+- 用户可以通过 Codex Skill 指导 Agent 调用 REST API 保存和搜索记忆。
 - 用户可以在 AI 编程会话中召回某个项目的关键上下文。
 - 用户可以导出自己的记忆数据。
 
@@ -71,15 +79,17 @@ MVP 支持：
 - 默认排除 archived memory。
 - 搜索结果展示 title、content 片段、project、type、status、tags、score。
 
-### 2.5 MCP 工具
+### 2.5 AI 入口
 
-MVP 只暴露：
+MVP 提供 Codex Skill 使用说明，指导 Agent 使用 REST API 完成：
 
 - `save_memory`
 - `search_memory`
 - `get_project_context`
 
-暂不暴露删除、废弃、合并类高风险 MCP 工具。第一版中这些操作只在 Web UI 或 REST API 中处理，并要求明确用户意图。
+这里的 `save_memory`、`search_memory`、`get_project_context` 是产品能力名，不要求第一版实现为 MCP tools。第一版通过 REST API 和 Skill 工作流完成。
+
+暂不通过 AI 入口暴露删除、废弃、合并类高风险操作。第一版中这些操作只在 Web UI 或 REST API 中处理，并要求明确用户意图。
 
 ### 2.6 REST API
 
@@ -93,7 +103,7 @@ MVP REST API：
 - `POST /memories/:id/archive`
 - `POST /search`
 - `GET /export`
-- `POST /mcp`
+- `GET /context/:project`
 
 ### 2.7 Web UI
 
@@ -105,7 +115,7 @@ MVP Web UI：
 - Memory 详情。
 - 新增和编辑表单。
 - 归档按钮。
-- MCP 连接说明。
+- Skill 使用说明。
 
 不做独立冲突处理面板，不做复杂统计 dashboard。
 
@@ -141,6 +151,8 @@ MVP Web UI：
 - JSON import。
 - 多 embedding provider。
 - 本地 embedding model。
+- MCP endpoint。
+- Hooks 自动捕捉。
 
 ## 4. MVP 验收标准
 
@@ -152,9 +164,10 @@ MVP 完成必须满足：
 - 新增 memory 后 D1 中有源数据。
 - 新增 memory 后 Vectorize 中有对应向量。
 - 可以通过自然语言搜索召回刚保存的 memory。
-- 可以通过 MCP `save_memory` 保存 memory。
-- 可以通过 MCP `search_memory` 搜索 memory。
-- 可以通过 MCP `get_project_context` 获取某个项目的上下文。
+- 可以通过 REST API 保存 memory。
+- 可以通过 REST API 搜索 memory。
+- 可以通过 REST API 获取某个项目的上下文。
+- 可以通过 Codex Skill 指导 Agent 完成保存、搜索和项目上下文召回。
 - archived memory 默认不会出现在搜索结果中。
 - 可以导出 JSON 数据。
 - README 或部署文档能让用户从空仓库完成部署。
@@ -167,7 +180,7 @@ MVP 完成必须满足：
 4. 实现 REST 创建、列表、详情、编辑、归档。
 5. 接入 Workers AI embedding。
 6. 接入 Vectorize 写入和搜索。
-7. 实现 `save_memory`、`search_memory`、`get_project_context`。
+7. 实现 REST `save_memory`、`search_memory`、`get_project_context` 对应能力。
 8. 实现最小 Web UI。
 9. 实现 JSON export。
-10. 部署并完成真实 MCP 客户端冒烟测试。
+10. 编写 Codex Skill 使用说明并完成真实 Codex 会话冒烟测试。

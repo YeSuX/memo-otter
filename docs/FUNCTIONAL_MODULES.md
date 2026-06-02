@@ -5,7 +5,7 @@
 MVP 主链路：
 
 ```text
-保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 MCP 给 AI 工具使用 -> 在 Web UI 中检查和修正
+保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 REST API / Codex Skill 给 AI 工作流使用 -> 在 Web UI 中检查和修正
 ```
 
 ## 1. 模块总览
@@ -16,7 +16,7 @@ MVP 拆成 10 个功能模块：
 2. Memory 基础管理
 3. Embedding 与索引
 4. 语义搜索
-5. MCP 工具
+5. AI 入口
 6. REST API
 7. Web UI
 8. 认证与访问控制
@@ -30,7 +30,7 @@ Memory 数据模型
   -> Memory 基础管理
   -> Embedding 与索引
   -> 语义搜索
-  -> MCP 工具 / REST API / Web UI
+  -> REST API / Web UI / AI 入口
   -> 数据导出与备份
   -> 部署、配置与调试
 ```
@@ -111,7 +111,7 @@ Memory 数据模型
 
 ### 3.1 模块目标
 
-让用户可以创建、查看、编辑和归档记忆。这是后续搜索、MCP 和 Web UI 的基础。
+让用户可以创建、查看、编辑和归档记忆。这是后续搜索、REST API、Skill 和 Web UI 的基础。
 
 ### 3.2 功能点
 
@@ -121,7 +121,7 @@ Memory 数据模型
 - 编辑 memory。
 - 归档 memory。
 - 记录轻量 memory event。
-- 返回适合 UI 和 MCP 使用的结构化结果。
+- 返回适合 UI、REST API 和 Skill 使用的结构化结果。
 
 ### 3.3 创建 memory
 
@@ -336,15 +336,15 @@ MVP 排序建议：
 - archived 默认不返回。
 - 搜索结果包含 score 和可读片段。
 
-## 6. MCP 工具
+## 6. AI 入口
 
 ### 6.1 模块目标
 
-让 Codex、Cursor、Claude、ChatGPT 等 MCP 兼容客户端可以调用 Memo Otter 的记忆能力。
+让 Codex 中的 Agent 可以根据 Skill 说明调用 Memo Otter 的记忆能力。MVP 不实现 MCP endpoint；MCP 延后到 MVP+，用于未来跨工具互操作。
 
-### 6.2 MVP 工具
+### 6.2 MVP 能力
 
-MVP 只提供：
+MVP 通过 REST API 和 Codex Skill 提供：
 
 - `save_memory`
 - `search_memory`
@@ -352,7 +352,7 @@ MVP 只提供：
 
 ### 6.3 `save_memory`
 
-用途：让 AI 在用户明确要求时保存一条记忆。
+用途：让 AI 在用户明确要求时，通过 REST API 保存一条记忆。
 
 输入：
 
@@ -373,13 +373,13 @@ MVP 只提供：
 
 验收：
 
-- MCP 客户端可以成功调用。
+- Codex Skill 能指导 Agent 成功调用保存接口。
 - 保存后的 memory 可以在 Web UI 和搜索中看到。
 - 未认证请求不能保存。
 
 ### 6.4 `search_memory`
 
-用途：让 AI 在回答前查询相关记忆。
+用途：让 AI 在回答前通过 REST API 查询相关记忆。
 
 输入：
 
@@ -397,7 +397,7 @@ MVP 只提供：
 
 验收：
 
-- MCP 客户端可以用自然语言查到已保存记忆。
+- Codex Skill 能指导 Agent 用自然语言查到已保存记忆。
 - 返回结果不包含 archived memory，除非显式允许。
 
 ### 6.5 `get_project_context`
@@ -422,9 +422,9 @@ MVP 只提供：
 - 结果按类型分组。
 - canonical 和 active 优先。
 
-### 6.6 非 MVP MCP 工具
+### 6.6 非 MVP AI 入口
 
-以下工具延后：
+以下能力延后：
 
 - `delete_memory`
 - `deprecate_memory`
@@ -432,7 +432,7 @@ MVP 只提供：
 - `replace_canonical_memory`
 - `import_memories`
 
-原因：这些工具会破坏或重写用户数据，第一版先不把高风险操作交给 AI 客户端。
+原因：这些能力会破坏或重写用户数据，第一版先不把高风险操作交给 AI。
 
 ## 7. REST API
 
@@ -450,7 +450,7 @@ MVP 只提供：
 - `POST /memories/:id/archive`
 - `POST /search`
 - `GET /export`
-- `POST /mcp`
+- `GET /context/:project`
 
 ### 7.3 Endpoint 拆解
 
@@ -495,9 +495,9 @@ MVP 只提供：
 
 - 导出用户数据。
 
-`POST /mcp`
+`GET /context/:project`
 
-- MCP endpoint。
+- 返回某个 project 的关键上下文，供 Skill 或 Web UI 使用。
 
 ### 7.4 验收要点
 
@@ -556,14 +556,14 @@ MVP 只提供：
 - 编辑 tags。
 - 保存后显示结果和提示。
 
-#### MCP 连接说明页
+#### Skill 使用说明页
 
 功能点：
 
-- 展示 MCP endpoint。
+- 展示 REST API endpoint。
 - 展示 token 配置方式。
-- 展示三个 MVP 工具说明。
-- 展示最小调用示例。
+- 展示 Codex Skill 的使用边界。
+- 展示保存、搜索、项目上下文召回示例。
 
 ### 8.3 UI 非目标
 
@@ -582,21 +582,21 @@ MVP 不做：
 - 用户可以搜索并打开结果。
 - 用户可以编辑 memory。
 - 用户可以归档 memory。
-- 用户可以看到 MCP 连接信息。
+- 用户可以看到 Skill 使用说明。
 - UI 中关键状态不依赖用户猜测。
 
 ## 9. 认证与访问控制
 
 ### 9.1 模块目标
 
-保护个人记忆数据，确保私有 API、Web UI 操作和 MCP 调用不会被未授权访问。
+保护个人记忆数据，确保私有 API、Web UI 操作和 Skill 调用不会被未授权访问。
 
 ### 9.2 功能点
 
 - 配置 `AUTH_TOKEN`。
 - 校验 bearer token。
 - 保护 REST API。
-- 保护 MCP endpoint。
+- 保护 Skill 会调用的 REST API。
 - 明确 `/health` 是否公开。
 - 为 Web UI 提供 token 输入或配置方式。
 - 返回统一认证错误。
@@ -612,7 +612,7 @@ MVP 不做：
 
 - 未认证请求不能读取或写入 memory。
 - 认证失败返回清晰错误。
-- MCP 客户端可以通过 token 访问。
+- Codex Skill 可以指导 Agent 通过 token 访问。
 - Web UI 可以完成认证后的操作。
 
 ## 10. 数据导出与备份
@@ -667,7 +667,7 @@ MVP 不做 JSON import。
 - 提供 D1 migration 命令。
 - 提供部署命令。
 - 提供冒烟测试步骤。
-- 提供 MCP 客户端连接说明。
+- 提供 Codex Skill 使用说明。
 
 ### 11.3 调试能力
 
@@ -683,7 +683,7 @@ MVP 不做 JSON import。
 - 部署后 `/health` 返回正常。
 - 部署后能保存一条 memory。
 - 部署后能搜索刚保存的 memory。
-- MCP 客户端能连接并调用工具。
+- Codex Skill 能在真实会话中指导 Agent 调用保存和搜索能力。
 
 ## 12. 推荐开发顺序
 
@@ -693,19 +693,20 @@ MVP 不做 JSON import。
 4. Workers AI embedding
 5. Vectorize 写入和搜索
 6. 语义搜索 API
-7. MCP `save_memory`
-8. MCP `search_memory`
-9. MCP `get_project_context`
+7. REST `save_memory`
+8. REST `search_memory`
+9. REST `get_project_context`
 10. Web UI 列表、详情、编辑、搜索
 11. JSON export
 12. 认证与访问控制完善
-13. 部署文档和冒烟测试
+13. Codex Skill 使用说明
+14. 部署文档和冒烟测试
 
 ## 13. 后续产物
 
 基于这份模块拆解，下一步可以继续产出：
 
 - `docs/TECHNICAL_DESIGN.md`：技术方案、架构、数据流、接口细节。
-- `docs/API_DESIGN.md`：REST API 和 MCP tools 的详细输入输出。
+- `docs/API_DESIGN.md`：REST API 和 Skill 调用能力的详细输入输出。
 - `docs/UI_DESIGN.md`：页面结构、状态、交互流程。
 - `docs/TASKS.md`：可执行开发任务清单。
