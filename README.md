@@ -16,6 +16,8 @@ Open:
 
 ```text
 http://localhost:8787/health
+http://localhost:8787/docs
+http://localhost:8787/openapi.json
 ```
 
 Private API requests require:
@@ -59,6 +61,8 @@ After creating D1, replace the placeholder `database_id` in `wrangler.jsonc`.
 
 ```text
 GET    /health
+GET    /docs
+GET    /openapi.json
 GET    /memories
 POST   /memories
 GET    /memories/:id

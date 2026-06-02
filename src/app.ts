@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { contextRoutes } from './routes/context';
+import { docsRoutes } from './routes/docs';
 import { exportRoutes } from './routes/export';
 import { healthRoutes } from './routes/health';
 import { memoriesRoutes } from './routes/memories';
@@ -13,6 +14,7 @@ export function createApp() {
   app.onError((error) => toJsonErrorResponse(error));
 
   app.route('/', healthRoutes);
+  app.route('/', docsRoutes);
   app.route('/memories', memoriesRoutes);
   app.route('/', searchRoutes);
   app.route('/', contextRoutes);
@@ -30,6 +32,7 @@ export function createApp() {
   <main>
     <h1>Memo Otter</h1>
     <p>Memory API is running. Use /memories with Authorization: Bearer &lt;AUTH_TOKEN&gt;.</p>
+    <p><a href="/docs">Open API Docs</a></p>
   </main>
 </body>
 </html>`)

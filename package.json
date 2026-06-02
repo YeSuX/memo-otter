@@ -8,6 +8,8 @@
 		"db:migrate:remote": "wrangler d1 migrations apply memo-otter-db --remote"
 	},
 	"dependencies": {
+		"@hono/zod-openapi": "^1.4.0",
+		"@scalar/hono-api-reference": "^0.10.19",
 		"hono": "^4.12.23",
 		"zod": "^4.4.3"
 	},
