@@ -16,6 +16,7 @@
 - [技术方案设计](./architecture/TECHNICAL_DESIGN.md)：Cloudflare Workers、D1、Vectorize、Workers AI、REST API 和部署方案。
 - [Memory 数据模型](./architecture/MEMORY_DATA_MODEL.md)：`memories`、`memory_embeddings`、`memory_events` 的数据模型和 migration 草案。
 - [Memory 基础管理设计计划](./architecture/MEMORY_BASIC_MANAGEMENT.md)：Memory 创建、列表、详情、编辑、归档、事件和 TODO 状态。
+- [Embedding 与索引实现计划](./architecture/EMBEDDING_INDEXING_IMPLEMENTATION_PLAN.md)：Workers AI embedding、Vectorize 写入、索引元数据、状态流转和失败降级的落地计划。
 
 ## 体验设计
 
