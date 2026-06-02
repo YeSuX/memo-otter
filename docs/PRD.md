@@ -102,8 +102,8 @@ Memo Otter 的第一阶段重点应该是：
 
 - Cloudflare-first：默认部署到用户自己的 Cloudflare 账户。
 - 学习友好：每个模块都尽量清楚，适合独立开发者理解和改造。
-- 记忆状态明确：区分 draft、active、canonical、deprecated、archived。
-- 冲突处理可解释：先提示和让用户选择，不要过早自动替换。
+- 记忆状态明确：第一版区分 draft、active、canonical、archived。
+- 冲突处理可解释：第一版只提示疑似重复或冲突，不自动替换。
 - 先把核心闭环做好：保存、搜索、MCP 调用、Web UI 管理。
 
 第一版不急着做：
@@ -179,11 +179,11 @@ Memo Otter 要解决的核心问题是：让个人上下文既能被人编辑，
 
 - 提供一个部署在 Cloudflare 上、由用户自己拥有的 AI 记忆服务。
 - 通过 MCP 暴露记忆操作能力。
-- 提供简单 Web UI，用于浏览、搜索、编辑和处理冲突。
+- 提供简单 Web UI，用于浏览、搜索、编辑和检查冲突提示。
 - 支持带元数据的语义召回。
 - 帮助用户学习 Cloudflare Workers、D1、Vectorize、Workers AI 和 MCP。
-- 显式管理记忆状态：draft、active、canonical、deprecated、archived。
-- 支持安全的记忆演化：append、replace、merge、deprecate、delete。
+- 显式管理记忆状态：MVP 支持 draft、active、canonical、archived。
+- 支持安全的记忆演化：MVP 先支持 create、update、archive，append、replace、merge、deprecate、delete 延后。
 
 ### 6.2 MVP 非目标
 
@@ -278,8 +278,9 @@ Memo Otter 应该提示冲突，并让用户选择：
 
 - 保留两条。
 - 将新记忆标记为 draft。
-- 用新记忆替换旧记忆。
-- 将旧记忆标记为 deprecated，并把新记忆设为 canonical。
+- 暂不处理，先进入 Web UI 人工检查。
+
+用新记忆替换旧记忆、将旧记忆标记为 deprecated、手动 merge 等能力不进入 MVP。
 
 ### 7.6 AI 工具集成
 
@@ -287,15 +288,19 @@ Memo Otter 应该提示冲突，并让用户选择：
 
 - `save_memory`
 - `search_memory`
-- `list_recent_memories`
 - `get_project_context`
-- `update_memory`
-- `deprecate_memory`
-- `delete_memory`
 
-删除、废弃、覆盖 canonical 记忆等高风险操作，需要让用户保持控制。
+删除、废弃、覆盖 canonical 记忆等高风险操作不进入 MVP MCP 工具。第一版优先确保 AI 能保存、搜索和召回项目上下文。
 
 ## 8. MVP 范围
+
+经过 PRD 评审后，Memo Otter 的 MVP 收敛为一个最小可用闭环：
+
+```text
+保存记忆 -> 生成 embedding -> 写入 D1 和 Vectorize -> 搜索召回 -> 通过 MCP 给 AI 工具使用 -> 在 Web UI 中检查和修正
+```
+
+MVP 的完整边界见：[MVP 范围](./MVP_SCOPE.md)。
 
 ### 8.1 功能需求
 
@@ -304,8 +309,9 @@ Memo Otter 应该提示冲突，并让用户选择：
 - 创建记忆，字段包括标题、内容、项目、标签、类型、状态、来源。
 - 查看记忆详情。
 - 编辑记忆标题、内容、标签、类型、项目和状态。
-- 删除记忆，并要求确认。
+- 归档记忆，并要求确认。
 - 查看最近记忆列表。
+- 导出 JSON 备份。
 
 #### 记忆类型
 
@@ -315,7 +321,8 @@ MVP 支持以下类型：
 - `preference`：长期有效的用户偏好。
 - `context`：项目或个人背景。
 - `note`：一般笔记或学习笔记。
-- `task`：需要记住的事项，但不做完整任务管理系统。
+
+`task` 类型延后，避免第一版变成任务管理系统。
 
 #### 记忆状态
 
@@ -324,8 +331,9 @@ MVP 支持以下状态：
 - `draft`：有价值，但尚未确认。
 - `active`：当前有用。
 - `canonical`：权威记忆，优先级最高。
-- `deprecated`：过去有效，但现在已过时。
 - `archived`：保留历史，默认不参与召回。
+
+`deprecated`、`supersedes` 和完整记忆演化关系延后到 MVP 后。
 
 #### 语义搜索
 
@@ -340,13 +348,9 @@ MVP 暴露以下 MCP 工具：
 
 - `save_memory`
 - `search_memory`
-- `list_recent_memories`
 - `get_project_context`
-- `update_memory`
-- `deprecate_memory`
-- `delete_memory`
 
-高风险工具需要在描述中明确风险。客户端应在删除、废弃、替换 canonical 记忆前要求用户确认。
+删除、废弃、合并、替换 canonical 记忆等高风险能力不进入第一版 MCP 工具。第一版中这些操作应留在 Web UI 或 REST API 中，由用户明确触发。
 
 #### Web UI
 
@@ -358,8 +362,10 @@ MVP Web UI 包含：
 - 标签筛选。
 - 状态筛选。
 - 记忆编辑器。
-- 冲突处理面板。
-- 简单统计：总记忆数、项目数、标签数、canonical 记忆数、deprecated 记忆数。
+- 归档操作。
+- MCP 连接说明。
+
+冲突处理面板、复杂统计和 dashboard 延后。
 
 #### 冲突与重复处理
 
@@ -368,7 +374,9 @@ MVP 做一个简单版本：
 - 如果语义相似度很高，标记为疑似重复。
 - 如果新记忆和同项目、同类型的 canonical 记忆可能冲突，提示用户。
 - MVP 不自动删除或自动替换。
-- 用户可以选择保留、手动合并、废弃旧记忆或替换旧记忆。
+- 用户可以先保存为 draft，再通过编辑或归档手动处理。
+
+手动 merge、废弃旧记忆、替换 canonical 记忆延后。
 
 #### 数据存储
 
@@ -377,8 +385,10 @@ MVP 使用 Cloudflare 托管资源：
 - Cloudflare D1 作为源数据库。
 - Cloudflare Vectorize 作为语义索引。
 - Workers AI 作为默认 embedding provider。
-- 保存 vector id，用于安全重建索引和删除。
-- 支持 JSON export/import，方便备份和迁移。
+- 保存 vector id，用于安全重建索引和后续归档清理。
+- 支持 JSON export，方便备份。
+
+JSON import 延后。
 
 ### 8.2 非功能需求
 
@@ -418,15 +428,14 @@ MVP 应部署到用户自己的 Cloudflare 账户。
 - Worker：提供 REST API、MCP endpoint，并可选托管静态 UI。
 - D1 database：保存记忆、事件、标签和项目元数据。
 - Vectorize index：保存 embedding，用于语义召回。
-- Workers AI binding：生成 embedding，并可用于冲突判断和摘要生成。
+- Workers AI binding：生成 embedding。
 - Secret `AUTH_TOKEN`：保护私有 API 和 MCP 访问。
 
 推荐 endpoint：
 
 - `/mcp`：AI 客户端使用的 MCP endpoint。
-- `/capture`：供脚本或未来集成保存记忆。
 - `/search`：供 UI 和调试使用的搜索 endpoint。
-- `/memories`：记忆列表、创建、更新、删除。
+- `/memories`：记忆列表、创建、查看、更新、归档。
 - `/export`：导出 JSON 备份。
 - `/health`：部署和 binding 检查。
 
@@ -453,8 +462,8 @@ MVP 应部署到用户自己的 Cloudflare 账户。
 - `source`
 - `created_at`
 - `updated_at`
-- `deprecated_at`
-- `supersedes_id`
+- `archived_at`
+- `embedding_status`
 - `metadata_json`
 
 `memory_embeddings`
@@ -479,12 +488,14 @@ MVP 应部署到用户自己的 Cloudflare 账户。
 
 `memory_events` 很重要。它让记忆变化可审计，也能帮助开发者理解“记忆不是静态笔记，而是会演化的上下文”。
 
+MVP 阶段只需要记录 create、update、archive、export 等轻量事件，不做完整审计后台。
+
 ### 9.4 检索策略
 
 MVP 的检索排序结合：
 
 - 语义相似度。
-- 状态权重：canonical > active > draft > deprecated > archived。
+- 状态权重：canonical > active > draft，archived 默认排除。
 - 类型权重：preference 和 decision 通常应高于普通 note。
 - 项目过滤。
 - 轻量 recency tie-breaker。
@@ -508,25 +519,7 @@ MVP 的检索排序结合：
 - 输入：project、limit。
 - 行为：按类型分组返回 canonical 和 active 记忆。
 
-`list_recent_memories`
-
-- 输入：project、limit。
-- 行为：返回最近记忆，方便浏览和查 ID。
-
-`update_memory`
-
-- 输入：id、fields。
-- 行为：更新内容和元数据；如果内容变化则重新 embedding；记录事件。
-
-`deprecate_memory`
-
-- 输入：id、reason、superseded_by。
-- 行为：将记忆标记为 deprecated，并记录事件。
-
-`delete_memory`
-
-- 输入：id。
-- 行为：在用户确认后删除记忆和对应 embedding。
+`list_recent_memories`、`update_memory`、`deprecate_memory`、`delete_memory` 不进入 MVP MCP 工具，延后到用户对高风险操作边界更清楚之后再加入。
 
 ## 10. 用户体验原则
 
@@ -547,7 +540,8 @@ MVP 的检索排序结合：
 - 用户在至少三次真实编程会话中使用它。
 - 用户可以理解 D1 schema 和导出的记忆数据。
 - 用户能够解释 MCP tools、Cloudflare Workers、D1、Vectorize、Workers AI、embedding、向量检索和记忆冲突处理。
-- 当积累足够记忆后，常见个人/项目查询的有效召回率达到约 80%。
+- MVP 阶段至少能在真实会话中稳定保存和召回 3 条 Memo Otter 项目记忆。
+- 当积累足够记忆后，再用常见个人/项目查询的有效召回率作为质量指标。
 
 ## 12. 里程碑
 
@@ -563,15 +557,15 @@ MVP 的检索排序结合：
 
 - 搭建 Wrangler 项目。
 - 设计 D1 schema。
-- 实现 create/list/update/delete memory。
-- 实现 memory event log。
+- 实现 create/list/detail/update/archive memory。
+- 实现轻量 memory event log。
 - 添加用于手动测试的基础 REST endpoint。
 
 ### Milestone 2：语义搜索
 
-- 添加 embedding provider 抽象。
+- 添加轻量 embedding 调用边界。
 - 实现文本分块。
-- 实现 Vectorize 插入和删除。
+- 实现 Vectorize 插入和重新索引。
 - 实现带过滤条件的搜索。
 - 实现疑似重复检测。
 
@@ -588,14 +582,14 @@ MVP 的检索排序结合：
 - 搜索。
 - 筛选。
 - 编辑器。
-- 冲突处理面板。
-- 简单统计。
+- 归档。
+- MCP 连接说明。
 
 ### Milestone 5：记忆质量
 
 - 状态权重排序。
-- 手动 merge/deprecate 流程。
-- Import/export。
+- 疑似重复提示。
+- Export。
 - 项目上下文摘要。
 
 ### Milestone 6：可选扩展
@@ -660,12 +654,19 @@ MVP 的检索排序结合：
 
 ## 14. 开放问题
 
-- 第一版只使用 Workers AI embedding，还是同时支持 OpenAI embedding provider？
-- UI 和 MCP Server 放在同一个 Worker，还是 UI 用 Cloudflare Pages 单独部署？
-- project 是自由文本，还是独立管理的实体？
-- canonical 记忆是否每次修改都必须用户确认？
-- deprecated 记忆在高度相关时是否应该默认参与搜索？
-- Markdown 文件夹同步应该放在 Web UI 前还是后？
+MVP 上线前必须回答的问题见：[开放问题](./OPEN_QUESTIONS.md)。
+
+已通过 PRD 评审确定：
+
+- 第一版只使用 Workers AI embedding，不接 OpenAI embedding provider。
+- UI 和 MCP Server 放在同一个 Worker。
+- project 使用自由文本，不做独立管理实体。
+- 不自动删除、覆盖或合并 canonical 记忆。
+- archived 记忆默认不参与搜索。
+- Markdown 文件夹同步延后。
+- 浏览器扩展、Obsidian 插件、移动端、多用户协作均不进入第一版。
+
+延后需求清单见：[延后需求](./DEFERRED_REQUIREMENTS.md)。
 
 ## 15. 推荐下一步
 
@@ -679,3 +680,7 @@ MVP 的检索排序结合：
 6. 部署到 Cloudflare，并在一次真实 AI 编程会话中使用。
 
 第一版应该先让 Memo Otter 记住 Memo Otter 自己的开发决策。它不需要一开始记住全世界，先记住自己的来路就够了。
+
+PRD 之后的完整开发流程见：[Memo Otter 开发流程](./DEVELOPMENT_PROCESS.md)。
+
+本轮 PRD 评审记录见：[PRD 评审记录](./PRD_REVIEW.md)。
