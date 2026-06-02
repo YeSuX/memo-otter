@@ -292,3 +292,5 @@ PRD 到技术方案之间的功能模块拆解见：[功能模块拆解](./FUNCT
 MVP Web UI 的原型与交互设计见：[原型与交互设计](./INTERACTION_DESIGN.md)。
 
 MVP 的技术方案设计见：[技术方案设计](./TECHNICAL_DESIGN.md)。
+
+MVP 的测试策略、用例和上线验收标准见：[测试方案](./TEST_PLAN.md)。
