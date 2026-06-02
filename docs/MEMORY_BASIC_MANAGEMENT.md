@@ -4,6 +4,27 @@
 
 这份文档细化 Memo Otter MVP 的 Memory 基础管理模块。它承接 `FUNCTIONAL_MODULES.md` 中的“Memory 基础管理”，并基于 `MEMORY_DATA_MODEL.md` 和 `TECHNICAL_DESIGN.md` 约定的数据表、状态枚举和 Cloudflare 技术栈，为后续 REST API、Web UI、Codex Skill、测试和索引流程提供可执行设计。
 
+## 0. 当前项目状态与设计边界
+
+当前仓库已经进入从文档阶段走向工程初始化的早期状态：
+
+- 已有完整 `docs/` 产品和技术设计文档。
+- 已出现 `package.json`、`pnpm-lock.yaml`、`node_modules/`，说明 Node/pnpm 项目初始化已经开始。
+- `package.json` 当前已有运行时依赖：`hono`、`zod`。
+- 当前尚未看到 `src/`、`migrations/`、`wrangler.jsonc` 等业务实现文件。
+
+因此，本设计计划要服务于下一步实现，但本文件本身不做代码实现。后续实现应以以下技术边界为准：
+
+- 服务端框架：Hono。
+- 输入校验：Zod。
+- 运行平台：Cloudflare Workers。
+- 源数据库：D1。
+- 语义索引：Vectorize。
+- Embedding provider：Workers AI。
+- 认证方式：单用户 `AUTH_TOKEN` bearer token。
+
+本模块只设计 Memory 基础管理，不展开语义搜索排序、Web UI 视觉实现、部署脚本和 Codex Skill 文件细节。相关模块只在本文件中定义接口依赖和数据契约。
+
 ## 1. 模块目标
 
 Memory 基础管理负责让用户可以创建、查看、编辑和归档记忆，并把每次关键变化记录为轻量事件。它是后续语义搜索、项目上下文召回、REST API、Skill 和 Web UI 的共同底座。
@@ -27,6 +48,7 @@ MVP 的目标不是做复杂知识库治理，而是先打通稳定的最小闭�
 - 所有入口返回同一种结构化 memory 结果，便于 UI、REST API 和 Skill 复用。
 - 所有写操作都记录轻量 `memory_events`，用于详情页解释、调试和导出。
 - 归档是软归档，不物理删除 memory。
+- 数据结构必须和 `MEMORY_DATA_MODEL.md` 中的 3 张 D1 表保持一致。
 
 ## 2. 范围
 
@@ -87,16 +109,38 @@ MVP 的目标不是做复杂知识库治理，而是先打通稳定的最小闭�
 
 - `memory`
 - `events`
-- `embedding`
 - `indexing`
 - `warnings`
 - `pagination`
 
 Skill 更适合读取简洁字段，但不需要另一套业务模型。
 
+### 3.5 和 Memory 数据模型保持单向依赖
+
+Memory 基础管理依赖 `MEMORY_DATA_MODEL.md` 已定义的数据模型，不在本模块重新定义数据库结构。实现时应遵守：
+
+- `memories` 是业务源表。
+- `memory_embeddings` 是索引元数据表。
+- `memory_events` 是轻量事件表。
+- API/UI 暴露 `tags` 和 `metadata`，D1 保存 `tags_json` 和 `metadata_json`。
+- `scope` 只能是 `long_term` 或 `short_term`。
+- `type` 是可自定义字符串，不做固定枚举。
+- `status` 只能是 `draft`、`active`、`canonical`、`archived`。
+- `embedding_status` 只能是 `pending`、`indexed`、`failed`、`stale`。
+
+### 3.6 同步流程优先，异步能力预留
+
+MVP 第一版推荐创建和内容编辑时同步完成 embedding/index，原因是：
+
+- 更容易验证“创建后可搜索”的闭环。
+- 更容易在 API 响应中返回真实索引状态。
+- 更容易定位 Workers AI 或 Vectorize 失败。
+
+如果后续同步流程影响响应速度，可以把索引放入 `ctx.waitUntil()`。但即使改为后台索引，D1 写入、事件记录、状态字段和响应结构也不应改变。
+
 ## 4. 数据结构
 
-### 4.1 Memory 输出结构
+### 4.1 Domain 类型
 
 API、UI 和 Skill 统一使用 camelCase 字段：
 
@@ -119,9 +163,38 @@ type Memory = {
 };
 ```
 
+这个结构对应 `MEMORY_DATA_MODEL.md` 中的 API/UI Memory 结构。它是服务层的 domain object，不是 D1 row。
+
+### 4.2 D1 Row 与 Domain 映射
+
+D1 row 使用 snake_case 和 JSON 字符串字段，domain object 使用 camelCase 和已解析对象：
+
+| D1 字段 | Domain 字段 | 转换 |
+| --- | --- | --- |
+| `id` | `id` | 原样 |
+| `title` | `title` | 原样 |
+| `content` | `content` | 原样 |
+| `project` | `project` | 空字符串不入库，统一为 `null` |
+| `scope` | `scope` | 枚举校验 |
+| `type` | `type` | normalize 后保存 |
+| `status` | `status` | 枚举校验 |
+| `tags_json` | `tags` | JSON parse/stringify |
+| `source` | `source` | 入口默认值 |
+| `embedding_status` | `embeddingStatus` | 枚举校验 |
+| `created_at` | `createdAt` | ISO 字符串 |
+| `updated_at` | `updatedAt` | ISO 字符串 |
+| `archived_at` | `archivedAt` | ISO 字符串或 `null` |
+| `metadata_json` | `metadata` | JSON parse/stringify |
+
+Repository 层必须集中处理这组映射，Route 层和 UI 不应接触 `tags_json`、`metadata_json`、`embedding_status` 这类 D1 字段名。
+
+### 4.3 Memory 输出结构
+
 列表接口不返回完整 `content`，只返回列表展示字段。
 
-### 4.2 Memory 列表项结构
+详情接口必须返回完整 `content` 和 `metadata`。
+
+### 4.4 Memory 列表项结构
 
 ```ts
 type MemoryListItem = {
@@ -139,7 +212,7 @@ type MemoryListItem = {
 };
 ```
 
-### 4.3 Event 输出结构
+### 4.5 Event 输出结构
 
 详情页返回最近事件：
 
@@ -155,7 +228,7 @@ type MemoryEvent = {
 };
 ```
 
-### 4.4 Embedding / Index 状态结构
+### 4.6 Embedding / Index 状态结构
 
 ```ts
 type MemoryIndexState = {
@@ -173,7 +246,14 @@ type MemoryIndexState = {
 
 `failure.message` 只保存错误摘要，不保存完整堆栈和敏感信息。
 
-### 4.5 Warning 结构
+`MemoryIndexState` 的数据来源：
+
+- `status` 来自 `memories.embedding_status`。
+- `embeddingModel`、`vectorId`、`contentHash` 主要来自最新一条 `memory_embeddings`。
+- `indexedAt` 可以取最新 embedding record 的 `created_at`。
+- `failure` 来自最近一条 `index_failed` event 的摘要。
+
+### 4.7 Warning 结构
 
 创建和编辑接口需要预留疑似重复或冲突提示：
 
@@ -187,6 +267,41 @@ type MemoryWarning = {
 ```
 
 MVP 可以先只返回空数组或简单启发式结果，不需要实现复杂冲突检测。
+
+### 4.8 输入类型契约
+
+创建输入沿用数据模型文档：
+
+```ts
+type CreateMemoryInput = {
+  title?: string;
+  content: string;
+  project?: string;
+  scope?: 'long_term' | 'short_term';
+  type?: string;
+  status?: 'draft' | 'active' | 'canonical';
+  tags?: string[];
+  source?: string;
+  metadata?: Record<string, unknown>;
+};
+```
+
+更新输入沿用数据模型文档：
+
+```ts
+type UpdateMemoryInput = {
+  title?: string;
+  content?: string;
+  project?: string | null;
+  scope?: 'long_term' | 'short_term';
+  type?: string;
+  status?: 'draft' | 'active' | 'canonical' | 'archived';
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+};
+```
+
+虽然产品需求的编辑字段没有显式列出 `scope`，但数据模型允许更新 `scope`。实现时可以支持 API 更新 `scope`，Web UI 第一版可选择先不暴露。
 
 ## 5. 服务分层
 
@@ -217,11 +332,23 @@ src/
 
 - 认证。
 - 读取 path、query、body。
-- 调用 schema 校验。
+- 调用 Zod schema 校验。
 - 调用 service。
 - 返回统一 JSON。
 
 Route 层不直接写 SQL，不直接调用 Workers AI，不直接访问 Vectorize。
+
+Hono 路由建议保持薄层：
+
+```text
+auth middleware
+-> parse request
+-> zod validation
+-> service call
+-> c.json(result, status)
+```
+
+Route 层也不负责生成 `id`、时间戳或默认值，这些属于 service/schema 的共同边界。
 
 ### 5.2 Service 层
 
@@ -233,6 +360,8 @@ Route 层不直接写 SQL，不直接调用 Workers AI，不直接访问 Vectori
 - 决定是否重新索引。
 - 写入事件。
 - 汇总结构化响应。
+- 调用 embedding service。
+- 控制事件失败、索引失败和主流程失败之间的边界。
 
 ### 5.3 Repository 层
 
@@ -242,6 +371,8 @@ Route 层不直接写 SQL，不直接调用 Workers AI，不直接访问 Vectori
 - 完成 D1 row 与 API model 映射。
 - 处理 `tags_json`、`metadata_json` 序列化和反序列化。
 - 提供分页查询、详情查询和条件更新。
+
+Repository 层不做业务判断，例如“不允许创建 archived memory”“content 变化需要重新索引”。这些判断属于 service 层。
 
 ### 5.4 Embedding Service
 
@@ -254,6 +385,31 @@ Route 层不直接写 SQL，不直接调用 Workers AI，不直接访问 Vectori
 - 记录 `index` 或 `index_failed` event。
 
 第一版可以同步执行索引，方便调试。如果接口响应明显变慢，再把索引流程移入 `ctx.waitUntil()`。
+
+### 5.5 Schema 层
+
+由于当前项目已引入 `zod`，后续 schema 应在 `src/schemas/memory.ts` 中集中定义：
+
+- `createMemorySchema`
+- `updateMemorySchema`
+- `listMemoriesQuerySchema`
+- `archiveMemorySchema`
+
+Schema 层负责输入 shape、长度、枚举和 JSON 对象校验。更复杂的业务规则，例如“归档走专用 endpoint”，放在 service 层。
+
+### 5.6 Env 与 bindings
+
+实现时不应手写长期漂移的 binding 类型。建议在 `wrangler.jsonc` 完成后运行 `wrangler types` 生成 Worker 类型。
+
+本模块需要的 bindings：
+
+| Binding | 用途 |
+| --- | --- |
+| `DB` | D1，保存 memories、memory_embeddings、memory_events |
+| `VECTORIZE` | Vectorize，写入和查询向量 |
+| `AI` | Workers AI，生成 embedding |
+| `AUTH_TOKEN` | Secret，保护私有接口 |
+| `EMBEDDING_MODEL` | 可配置变量，记录当前 embedding model |
 
 ## 6. 创建 Memory
 
@@ -295,6 +451,14 @@ POST /memories
 | `source` | 可选，由入口补默认值，Web UI 为 `web`，Skill 为 `skill`，普通 REST 为 `api` |
 | `metadata` | 默认 `{}`，必须是可 JSON 序列化对象 |
 
+创建时不接受客户端传入：
+
+- `id`
+- `embeddingStatus`
+- `createdAt`
+- `updatedAt`
+- `archivedAt`
+
 标题自动生成建议：
 
 - 从 `content` 去掉首尾空白。
@@ -309,6 +473,7 @@ POST /memories
 POST /memories
   -> validate input
   -> normalize fields
+  -> generate id, created_at, updated_at
   -> build memory row
   -> insert memories with embedding_status = pending
   -> record create event
@@ -320,6 +485,25 @@ POST /memories
   -> record index event
   -> return create result
 ```
+
+推荐创建时写入的 D1 初始字段：
+
+| 字段 | 值 |
+| --- | --- |
+| `id` | 应用生成，推荐 `crypto.randomUUID()` 或带前缀的 UUID |
+| `title` | 用户输入或自动生成 |
+| `content` | trim 后正文 |
+| `project` | 字符串或 `NULL` |
+| `scope` | 默认 `long_term` |
+| `type` | 默认 `note` |
+| `status` | 默认 `active` |
+| `tags_json` | `JSON.stringify(tags)` |
+| `source` | `api`、`web`、`skill` 等 |
+| `embedding_status` | `pending` |
+| `created_at` | now ISO |
+| `updated_at` | now ISO |
+| `archived_at` | `NULL` |
+| `metadata_json` | `JSON.stringify(metadata)` |
 
 ### 6.4 索引失败处理
 
@@ -333,6 +517,12 @@ POST /memories
 - HTTP 状态建议仍为 `201 Created`，因为 memory 创建成功；索引失败体现在响应字段里。
 
 D1 插入 memory 失败时，整个请求失败，不触发索引。
+
+事件写入失败时：
+
+- 不建议回滚已经创建的 memory。
+- 应记录结构化日志。
+- 响应可以在 `warnings` 中加入轻量提示，但不暴露内部错误堆栈。
 
 ### 6.5 创建响应
 
@@ -395,6 +585,8 @@ GET /memories
 - 默认按 `updated_at DESC` 排序。
 - 不返回完整 `content`。
 - 返回 `embeddingStatus`，方便 UI 标记 pending、failed、stale。
+- `limit` 默认 20，最大 100。
+- MVP 优先支持 `offset`，保留 `cursor` 字段用于未来切换游标分页。
 
 ### 7.3 Tags 过滤策略
 
@@ -404,6 +596,13 @@ D1 中 `tags_json` 是 TEXT，MVP 可以先采用保守实现：
 - 使用 JSON 解析后在应用层过滤，避免脆弱的字符串匹配。
 - 为了避免全表扫描过大，先在 D1 里应用 project、scope、type、status、limit 扩大窗口，再应用 tags 过滤。
 - 如果后续数据量变大，再增加 `memory_tags` 表。
+
+如果实现应用层 tags 过滤，分页需要注意：
+
+- 不能先严格取 `limit` 条再过滤，否则可能返回数量明显不足。
+- MVP 可以使用 `limit * 3` 作为候选窗口，再过滤到 `limit`。
+- 响应中应保守设置 `hasMore`，避免误导 UI。
+- 如果 tags 成为核心过滤能力，应尽快迁移到 `memory_tags` 表。
 
 ### 7.4 列表响应
 
@@ -448,6 +647,8 @@ GET /memories/:id
 - memory 全量字段。
 - 最近的 memory events，默认 20 条。
 - embedding/index 状态。
+
+详情接口默认可以返回 archived memory。因为用户通过 id 打开详情时，通常是明确查看这条记录；默认排除 archived 的规则主要适用于列表、搜索和项目上下文召回。
 
 ### 8.3 详情响应
 
@@ -517,12 +718,13 @@ PATCH /memories/:id
 - `title`
 - `content`
 - `project`
+- `scope`
 - `type`
 - `status`
 - `tags`
 - `metadata`
 
-注意：`scope` 在用户需求的编辑字段中没有列出，但数据模型允许更新。MVP 实现可以支持 `scope`，UI 第一版可以先不暴露或放在高级设置中。
+说明：`scope` 在原始功能点中没有列为编辑字段，但 `MEMORY_DATA_MODEL.md` 的 `UpdateMemoryInput` 已允许更新。为了减少 API 与数据模型分裂，REST API 设计支持 `scope` 更新；Web UI 第一版可以先不暴露。
 
 ### 9.2 普通编辑规则
 
@@ -556,6 +758,8 @@ PATCH /memories/:id
 - 记录 `index_failed` event。
 - 返回 `warnings`。
 
+推荐顺序是先把新 content 和 `embedding_status = stale` 写入 D1，再执行索引。这样即使索引失败，详情页也能看到最新正文和失败状态。
+
 ### 9.4 仅元数据变化规则
 
 如果只更新以下字段，不重新生成 embedding：
@@ -577,8 +781,9 @@ PATCH /memories/:id
 ### 9.5 Status 编辑规则
 
 - 普通 `PATCH` 可以在 `draft`、`active`、`canonical` 之间切换。
-- 将 `status` 设为 `archived` 时，推荐 route 层转入归档流程或返回提示使用 `POST /memories/:id/archive`。
-- 从 `archived` 恢复为 `active` 或 `draft` 可作为 MVP+；如果 MVP API 支持，需要明确是否清空 `archived_at`。
+- 将 `status` 设为 `archived` 时，应走归档流程，而不是普通更新流程。
+- REST API 可以选择对 `PATCH status=archived` 返回 `409 invalid_state_transition`，提示调用 `POST /memories/:id/archive`。
+- 从 `archived` 恢复为 `active` 或 `draft` 可作为 MVP+；MVP 不设计恢复入口。
 
 ### 9.6 Canonical 编辑提示
 
@@ -596,11 +801,13 @@ PATCH /memories/:id
 {
   "before": {
     "tags": ["mvp"],
-    "contentHash": "oldhash..."
+    "contentHash": "oldhash",
+    "embeddingStatus": "indexed"
   },
   "after": {
     "tags": ["mvp", "cloudflare"],
-    "contentHash": "newhash..."
+    "contentHash": "newhash",
+    "embeddingStatus": "stale"
   }
 }
 ```
@@ -671,6 +878,8 @@ POST /memories/:id/archive
 - 记录 `archive` event。
 - 不删除 D1 数据。
 - 不要求删除 Vectorize 向量。
+- 不改变 `embedding_status`。
+- 搜索和项目上下文必须在 D1 回查后排除 archived。
 
 ### 10.3 Archive Event 内容
 
@@ -721,7 +930,7 @@ POST /memories/:id/archive
 
 可以按低成本规则实现：
 
-- 同一 project 内 title 完全相同：`possible_duplicate`。
+- 同一 project 内非 archived memory 的 title 完全相同：`possible_duplicate`。
 - 同一 project、同一 type、tags 高度重合：`possible_duplicate`。
 - 编辑 canonical memory：`canonical_edit`。
 - 索引失败：`index_failed`。
@@ -747,6 +956,24 @@ MVP 中只提示，不自动合并、不自动拒绝、不自动覆盖。
 | `POST` | `/memories/:id/archive` | 归档 memory | memory、warnings |
 
 所有接口都需要 `Authorization: Bearer <AUTH_TOKEN>`，除非后续明确开放健康检查或静态资源。
+
+### 12.1 Hono 路由组织
+
+建议在 Hono 中把 Memory route 统一挂载到：
+
+```text
+app.route('/memories', memoriesRoutes)
+```
+
+`memoriesRoutes` 内部负责：
+
+- `GET /`
+- `POST /`
+- `GET /:id`
+- `PATCH /:id`
+- `POST /:id/archive`
+
+这样可以让认证 middleware 在 `/memories` 子路由统一生效，也方便后续把 `/search`、`/context`、`/export` 分模块管理。
 
 ## 13. 错误响应
 
@@ -776,6 +1003,27 @@ MVP 中只提示，不自动合并、不自动拒绝、不自动覆盖。
 | `500` | `internal_error` | D1 或服务内部错误 |
 
 索引失败不建议直接返回 `500`，因为 memory 写入成功。它应通过 `embeddingStatus`、`indexing.failure` 和 `warnings` 表达。
+
+### 13.1 Zod 校验错误映射
+
+Zod validation error 应统一映射为：
+
+- HTTP `400`
+- `code = invalid_request`
+- `details.fields` 列出字段级错误
+
+不要把 Zod 原始错误对象完整透出给客户端，避免响应格式不稳定。
+
+### 13.2 事件失败和索引失败的错误边界
+
+| 失败点 | HTTP 行为 | 数据状态 |
+| --- | --- | --- |
+| 创建 memory D1 insert 失败 | `500` 或更具体错误 | 不创建 memory |
+| create event 写入失败 | 创建继续 | memory 保留，日志记录 |
+| Workers AI embedding 失败 | 创建或编辑请求仍可成功 | `embedding_status = failed` |
+| Vectorize upsert 失败 | 创建或编辑请求仍可成功 | `embedding_status = failed` |
+| embedding metadata 写入失败 | 请求返回 warning 或内部错误，按实现取舍 | 需要避免显示为 indexed |
+| archive event 写入失败 | 归档继续 | memory archived，日志记录 |
 
 ## 14. Web UI 需求映射
 
@@ -844,6 +1092,8 @@ Skill 入口调用写操作时应遵守：
 - metadata 必须可 JSON 序列化。
 - content hash 在同一正文下稳定。
 - content 变化能被检测到。
+- type 能完成 trim、小写化、空格转短横线。
+- project 空字符串会被归一化为 `null`。
 
 ### 16.2 Repository 测试
 
@@ -855,6 +1105,9 @@ Skill 入口调用写操作时应遵守：
 - tags_json 能正确序列化和反序列化。
 - metadata_json 能正确序列化和反序列化。
 - archive 更新 status、archived_at、updated_at。
+- D1 row 能正确映射为 domain object。
+- 损坏的 `tags_json` 能安全降级为 `[]`。
+- 损坏的 `metadata_json` 能安全降级为 `{}`。
 
 ### 16.3 Service 测试
 
@@ -867,6 +1120,9 @@ Skill 入口调用写操作时应遵守：
 - 编辑成功记录 update event。
 - 归档记录 archive event。
 - 已归档 memory 默认不出现在列表。
+- event 写入失败不破坏主流程。
+- 创建时索引失败不会丢失 memory。
+- 编辑 content 后索引失败时保留新 content。
 
 ### 16.4 REST API 测试
 
@@ -897,18 +1153,22 @@ Skill 入口调用写操作时应遵守：
 
 建议按以下顺序实现：
 
-1. 实现 `schemas/memory.ts`，完成 create、update、list query 校验和 normalize。
-2. 实现 `memory-repository.ts`，完成 D1 CRUD 和 row/model 映射。
-3. 实现 `event-repository.ts` 和 `event-service.ts`。
-4. 实现 `embedding-repository.ts` 的索引元数据写入和读取。
-5. 实现 `embedding-service.ts` 的同步索引流程和失败处理。
-6. 实现 `memory-service.ts` 的 create、list、get、update、archive。
-7. 实现 `routes/memories.ts`。
-8. 写单元测试和 repository 测试。
-9. 写 REST API 测试。
-10. 接入 Web UI 表单、列表、详情和归档按钮。
-11. 在 Codex Skill 中补充基础管理调用说明。
-12. 完成真实 Cloudflare 资源冒烟测试。
+1. 补齐工程骨架：`src/`、`migrations/`、`wrangler.jsonc`、`tsconfig.json` 和 scripts。
+2. 根据 `MEMORY_DATA_MODEL.md` 创建 `migrations/0001_create_memory_tables.sql`。
+3. 生成或更新 Worker bindings 类型。
+4. 实现 `schemas/memory.ts`，完成 create、update、list query、archive body 校验和 normalize。
+5. 实现 D1 row/domain 映射工具，集中处理 `tags_json` 和 `metadata_json`。
+6. 实现 `memory-repository.ts`，完成 D1 CRUD 和列表过滤。
+7. 实现 `event-repository.ts` 和 `event-service.ts`。
+8. 实现 `embedding-repository.ts` 的索引元数据写入和读取。
+9. 实现 `embedding-service.ts` 的同步索引流程和失败处理。
+10. 实现 `memory-service.ts` 的 create、list、get、update、archive。
+11. 实现 `routes/memories.ts` 并挂载到 Hono app。
+12. 写单元测试和 repository 测试。
+13. 写 REST API 测试。
+14. 接入 Web UI 表单、列表、详情和归档按钮。
+15. 在 Codex Skill 中补充基础管理调用说明。
+16. 完成真实 Cloudflare 资源冒烟测试。
 
 ## 18. 验收标准
 
