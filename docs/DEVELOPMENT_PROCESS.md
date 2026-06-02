@@ -290,3 +290,5 @@ MVP 上线后，不急着加功能，先用它记录 Memo Otter 自己的开发�
 PRD 到技术方案之间的功能模块拆解见：[功能模块拆解](./FUNCTIONAL_MODULES.md)。
 
 MVP Web UI 的原型与交互设计见：[原型与交互设计](./INTERACTION_DESIGN.md)。
+
+MVP 的技术方案设计见：[技术方案设计](./TECHNICAL_DESIGN.md)。
