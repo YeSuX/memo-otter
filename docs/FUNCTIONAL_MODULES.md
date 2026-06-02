@@ -46,7 +46,8 @@ Memory 数据模型
 - 定义 `memories` 表。
 - 定义 `memory_embeddings` 表。
 - 定义轻量 `memory_events` 表。
-- 定义 memory 类型枚举。
+- 定义 memory 生命周期枚举。
+- 定义用户可自定义的 memory 类型规则。
 - 定义 memory 状态枚举。
 - 定义 embedding 索引状态。
 - 定义基础字段校验规则。
@@ -60,6 +61,7 @@ Memory 数据模型
 - `title`
 - `content`
 - `project`
+- `scope`
 - `type`
 - `status`
 - `tags_json`
@@ -101,7 +103,8 @@ Memory 数据模型
 ### 2.5 验收要点
 
 - 可以通过 migration 创建所有 MVP 表。
-- Memory 类型只允许 `decision`、`preference`、`context`、`note`。
+- Memory 生命周期只允许 `long_term`、`short_term`。
+- Memory 类型允许用户自定义，但必须是非空短字符串。
 - Memory 状态只允许 `draft`、`active`、`canonical`、`archived`。
 - 创建 memory 时自动生成 `id`、`created_at`、`updated_at`。
 - 编辑 memory 时更新 `updated_at`。
@@ -130,6 +133,7 @@ Memory 数据模型
 - `title`
 - `content`
 - `project`
+- `scope`
 - `type`
 - `status`
 - `tags`
@@ -140,7 +144,8 @@ Memory 数据模型
 
 - `content` 必填。
 - `title` 可选；如果为空，可以从内容前若干字生成默认标题。
-- `type` 默认为 `note`。
+- `scope` 默认为 `long_term`。
+- `type` 默认为 `note`，但允许用户自定义。
 - `status` 默认为 `active`。
 - `tags` 默认为空数组。
 - 创建成功后触发 embedding 和索引流程。
@@ -156,6 +161,7 @@ Memory 数据模型
 支持参数：
 
 - `project`
+- `scope`
 - `type`
 - `status`
 - `tags`

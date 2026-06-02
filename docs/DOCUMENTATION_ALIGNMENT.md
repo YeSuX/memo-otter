@@ -68,12 +68,19 @@ MVP 外：
 
 ## 6. 数据口径
 
-Memory 类型：
+Memory 生命周期：
+
+- `long_term`
+- `short_term`
+
+Memory 内置建议类型：
 
 - `decision`
 - `preference`
 - `context`
 - `note`
+
+`type` 允许用户自定义，D1 中先作为非空字符串保存。
 
 Memory 状态：
 

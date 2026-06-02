@@ -275,6 +275,7 @@ Secret：
 - `title TEXT NOT NULL`
 - `content TEXT NOT NULL`
 - `project TEXT`
+- `scope TEXT NOT NULL`
 - `type TEXT NOT NULL`
 - `status TEXT NOT NULL`
 - `tags_json TEXT NOT NULL`
@@ -287,17 +288,20 @@ Secret：
 
 约束：
 
-- `type` 只允许 `decision`、`preference`、`context`、`note`。
+- `scope` 只允许 `long_term`、`short_term`。
+- `type` 允许用户自定义，但不能为空。
 - `status` 只允许 `draft`、`active`、`canonical`、`archived`。
 - `embedding_status` 只允许 `pending`、`indexed`、`failed`、`stale`。
 
 推荐索引：
 
 - `idx_memories_project`
+- `idx_memories_scope`
 - `idx_memories_type`
 - `idx_memories_status`
 - `idx_memories_updated_at`
-- `idx_memories_project_status`
+- `idx_memories_project_scope_status`
+- `idx_memories_project_scope_type_status`
 
 ## 6.2 `memory_embeddings`
 

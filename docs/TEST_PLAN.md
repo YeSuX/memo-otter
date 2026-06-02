@@ -144,14 +144,16 @@ Memo Otter MVP uses Cloudflare Workers, D1, Vectorize, and Workers AI.
 测试点：
 
 - `content` 必填。
-- `type` 只允许 `decision`、`preference`、`context`、`note`。
+- `scope` 只允许 `long_term`、`short_term`。
+- `type` 允许用户自定义，但不能为空。
 - `status` 只允许 `draft`、`active`、`canonical`、`archived`。
 - `tags` 必须能转换为数组。
 - `metadata` 必须是可序列化对象。
 
 验收：
 
-- 非法 type 被拒绝。
+- 非法 scope 被拒绝。
+- 空 type 被拒绝。
 - 非法 status 被拒绝。
 - 空 content 被拒绝。
 - 合法输入可以通过校验。
@@ -160,6 +162,7 @@ Memo Otter MVP uses Cloudflare Workers, D1, Vectorize, and Workers AI.
 
 测试点：
 
+- 未传 `scope` 时默认为 `long_term`。
 - 未传 `type` 时默认为 `note`。
 - 未传 `status` 时默认为 `active`。
 - 未传 `tags` 时默认为空数组。
@@ -411,7 +414,8 @@ D1 写入成功
 
 - 合法创建。
 - 空 content。
-- 非法 type。
+- 非法 scope。
+- 空 type。
 - 非法 status。
 - tags 格式错误。
 

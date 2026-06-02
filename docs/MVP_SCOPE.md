@@ -41,6 +41,7 @@ Memory 字段：
 - `title`
 - `content`
 - `project`
+- `scope`
 - `type`
 - `status`
 - `tags`
@@ -50,18 +51,27 @@ Memory 字段：
 - `archived_at`
 - `metadata`
 
-### 2.2 Memory 类型
+### 2.2 Memory 生命周期
 
 MVP 支持：
 
+- `long_term`：长期记忆，默认参与跨会话召回。
+- `short_term`：短期记忆，主要服务当前阶段或近期任务。
+
+### 2.3 Memory 类型
+
+MVP 内置建议类型：
+
 - `decision`：影响未来工作的决策。
-- `preference`：长期有效的用户偏好。
-- `context`：项目或个人背景。
+- `preference`：用户偏好。
+- `context`：背景上下文。
 - `note`：一般笔记或学习笔记。
 
-`task` 延后。第一版避免把 Memo Otter 做成任务管理系统。
+`type` 允许用户自定义，D1 中先作为字符串保存，不在第一版建立独立类型实体。
 
-### 2.3 Memory 状态
+`task` 类型管理延后。第一版避免把 Memo Otter 做成任务管理系统。
+
+### 2.4 Memory 状态
 
 MVP 支持：
 
@@ -72,14 +82,14 @@ MVP 支持：
 
 `deprecated` 延后到记忆演化流程更清楚之后再做。第一版可以先用 `archived` 表示“不再默认召回”。
 
-### 2.4 语义搜索
+### 2.5 语义搜索
 
 - 支持自然语言搜索。
-- 支持按 project、type、status、tags 过滤。
+- 支持按 project、scope、type、status、tags 过滤。
 - 默认排除 archived memory。
-- 搜索结果展示 title、content 片段、project、type、status、tags、score。
+- 搜索结果展示 title、content 片段、project、scope、type、status、tags、score。
 
-### 2.5 AI 入口
+### 2.6 AI 入口
 
 MVP 提供 Codex Skill 使用说明，指导 Agent 使用 REST API 完成：
 
@@ -91,7 +101,7 @@ MVP 提供 Codex Skill 使用说明，指导 Agent 使用 REST API 完成：
 
 暂不通过 AI 入口暴露删除、废弃、合并类高风险操作。第一版中这些操作只在 Web UI 或 REST API 中处理，并要求明确用户意图。
 
-### 2.6 REST API
+### 2.7 REST API
 
 MVP REST API：
 
@@ -105,7 +115,7 @@ MVP REST API：
 - `GET /export`
 - `GET /context/:project`
 
-### 2.7 Web UI
+### 2.8 Web UI
 
 MVP Web UI：
 
@@ -119,7 +129,7 @@ MVP Web UI：
 
 不做独立冲突处理面板，不做复杂统计 dashboard。
 
-### 2.8 数据和索引
+### 2.9 数据和索引
 
 - D1 是源数据库。
 - Vectorize 是可重建语义索引。
