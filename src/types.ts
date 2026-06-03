@@ -128,3 +128,37 @@ export type ArchiveMemoryInput = {
   source?: string | undefined;
   reason?: string | undefined;
 };
+
+export type SearchInput = {
+  query: string;
+  project?: string | null | undefined;
+  type?: string | undefined;
+  status?: MemoryStatus | undefined;
+  tags?: string[] | undefined;
+  includeArchived: boolean;
+  limit: number;
+};
+
+export type SearchResultItem = {
+  id: string;
+  title: string;
+  snippet: string;
+  project: string | null;
+  type: string;
+  status: MemoryStatus;
+  tags: string[];
+  score: number;
+  source: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SearchResponse = {
+  query: string;
+  results: SearchResultItem[];
+  meta: {
+    limit: number;
+    candidate_count: number;
+    returned_count: number;
+  };
+};

@@ -416,16 +416,46 @@ export const openApiDocument = {
         type: 'object',
         required: ['query'],
         properties: {
-          query: { type: 'string', minLength: 1 },
-          project: { type: 'string' },
+          query: { type: 'string', minLength: 1, maxLength: 1000 },
+          project: { type: ['string', 'null'], maxLength: 120 },
+          type: { type: 'string', maxLength: 64 },
+          status: { $ref: '#/components/schemas/MemoryStatus' },
+          tags: { type: 'array', items: { type: 'string', maxLength: 40 }, maxItems: 20 },
           include_archived: { type: 'boolean', default: false },
           limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 }
+        },
+        additionalProperties: false
+      },
+      SearchResultItem: {
+        type: 'object',
+        required: ['id', 'title', 'snippet', 'project', 'type', 'status', 'tags', 'score', 'source', 'created_at', 'updated_at'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          snippet: { type: 'string' },
+          project: { type: ['string', 'null'] },
+          type: { type: 'string' },
+          status: { $ref: '#/components/schemas/MemoryStatus' },
+          tags: { type: 'array', items: { type: 'string' } },
+          score: { type: 'number' },
+          source: { type: ['string', 'null'] },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' }
         }
       },
       SearchResponse: {
         type: 'object',
         properties: {
-          results: { type: 'array', items: { type: 'object' } }
+          query: { type: 'string' },
+          results: { type: 'array', items: { $ref: '#/components/schemas/SearchResultItem' } },
+          meta: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer' },
+              candidate_count: { type: 'integer' },
+              returned_count: { type: 'integer' }
+            }
+          }
         }
       },
       ContextResponse: {

@@ -13,6 +13,11 @@ type FakeVectorizeRecord = {
   metadata?: Record<string, unknown>;
 };
 
+type FakeVectorizeMatch = {
+  id: string;
+  score: number;
+};
+
 export class InMemoryD1 {
   memories: MemoryRow[] = [];
   embeddings: MemoryEmbeddingRow[] = [];
@@ -189,6 +194,11 @@ class FakeStatement {
       return this.db.memories.filter((row) => row.id === this.bindings[0]);
     }
 
+    if (sql.includes('where id in')) {
+      const ids = new Set(this.bindings.map(String));
+      return this.db.memories.filter((row) => ids.has(row.id));
+    }
+
     if (sql.includes('and title = ? and id <> ?')) {
       if (sql.includes('project is null')) {
         const [title, excludeId] = this.bindings;
@@ -247,6 +257,8 @@ export function createFakeEnv(
     failAi?: boolean;
     badAiShape?: boolean;
     failVectorize?: boolean;
+    failVectorizeQuery?: boolean;
+    vectorQueryResults?: FakeVectorizeMatch[];
     failEmbeddingMetadata?: boolean;
     failEmbeddingStatusUpdate?: boolean;
   } = {}
@@ -259,10 +271,21 @@ export function createFakeEnv(
   const db = new InMemoryD1(d1Options);
   const vectorize = {
     upserts: [] as FakeVectorizeRecord[],
+    queryResults: options.vectorQueryResults ? [...options.vectorQueryResults] : ([] as FakeVectorizeMatch[]),
     async upsert(vectors: FakeVectorizeRecord[]) {
       if (options.failVectorize) throw new Error('vectorize failed');
       this.upserts.push(...vectors);
       return { count: vectors.length };
+    },
+    async query(_values: number[], queryOptions?: { topK?: number }) {
+      if (options.failVectorizeQuery) throw new Error('vectorize query failed');
+      const matches = this.queryResults.length
+        ? this.queryResults
+        : this.upserts.map((vector, index) => ({
+            id: vector.id,
+            score: 1 - index * 0.01
+          }));
+      return { matches: matches.slice(0, queryOptions?.topK ?? matches.length) };
     }
   };
   return {

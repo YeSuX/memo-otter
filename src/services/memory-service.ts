@@ -27,6 +27,7 @@ import {
 } from '../utils/memory';
 import { EmbeddingService } from './embedding-service';
 import { EventService } from './event-service';
+import { SearchService } from './search-service';
 
 export type ServiceContext = {
   source?: string | undefined;
@@ -89,6 +90,7 @@ export class MemoryService {
 
     await this.events.recordCreateEvent(memory, source);
     const warnings = await this.duplicateWarnings(memory);
+    warnings.push(...(await this.semanticDuplicateWarnings(memory)));
     const indexing = await this.indexing.indexMemory(memory, source);
     const saved = (await this.memories.getMemoryById(memory.id)) ?? memory;
     if (indexing.status === 'failed') {
@@ -282,5 +284,20 @@ export class MemoryService {
         relatedMemoryIds: duplicates.map((item) => item.id)
       }
     ];
+  }
+
+  private async semanticDuplicateWarnings(memory: Memory): Promise<MemoryWarning[]> {
+    try {
+      return await new SearchService(this.env).findRelatedForNewMemory({
+        content: memory.content,
+        project: memory.project,
+        type: memory.type,
+        excludeId: memory.id
+      });
+    } catch (error) {
+      // 语义提示只是辅助信息，失败不能影响 memory 创建主链路。
+      console.warn('semantic duplicate check failed', error);
+      return [];
+    }
   }
 }

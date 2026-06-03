@@ -35,6 +35,40 @@ GET /memories
 
 Use filters such as `project`, `scope`, `type`, `status`, `tags`, and `include_archived` when the user asks for a subset.
 
+## search_memory
+
+Call:
+
+```text
+POST /search
+```
+
+Use this when the user asks to recall prior project decisions, preferences, context, or notes by meaning rather than by exact title.
+
+Example body:
+
+```json
+{
+  "query": "natural language question",
+  "project": "optional-project",
+  "type": "decision",
+  "tags": ["optional-tag"],
+  "limit": 10
+}
+```
+
+Read `results[].snippet`, `score`, `status`, and `updated_at` before deciding whether the memory is relevant. Prefer canonical and active memories when scores are close. Do not treat search results as full memory content; call `get_memory` when the exact content is needed.
+
+## get_project_context
+
+Call:
+
+```text
+GET /context/:project
+```
+
+Use this when the user asks for the current working context of a project. The endpoint defaults to non-archived memories. If the user needs a targeted recall, prefer `search_memory` with a project filter.
+
 ## get_memory
 
 Call:

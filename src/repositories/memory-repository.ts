@@ -61,6 +61,17 @@ export class MemoryRepository {
     return row ? memoryRowToDomain(row) : null;
   }
 
+  async findByIds(ids: string[]): Promise<Memory[]> {
+    if (ids.length === 0) return [];
+    const uniqueIds = [...new Set(ids)];
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const result = await this.db
+      .prepare(`SELECT * FROM memories WHERE id IN (${placeholders})`)
+      .bind(...uniqueIds)
+      .all<MemoryRow>();
+    return (result.results ?? []).map(memoryRowToDomain);
+  }
+
   async listMemories(filters: ListMemoriesFilters): Promise<{ items: MemoryListItem[]; hasMore: boolean }> {
     const conditions: string[] = [];
     const bindings: unknown[] = [];
