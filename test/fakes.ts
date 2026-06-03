@@ -2,14 +2,34 @@ import type { MemoryEmbeddingRow, MemoryEventRow, MemoryRow } from '../src/types
 import type { RuntimeEnv } from '../src/types';
 
 type TableName = 'memories' | 'memory_embeddings' | 'memory_events';
+type FakeD1Options = {
+  failEmbeddingMetadata?: boolean;
+  failEmbeddingStatusUpdate?: boolean;
+};
+
+type FakeVectorizeRecord = {
+  id: string;
+  values: number[];
+  metadata?: Record<string, unknown>;
+};
 
 export class InMemoryD1 {
   memories: MemoryRow[] = [];
   embeddings: MemoryEmbeddingRow[] = [];
   events: MemoryEventRow[] = [];
 
+  constructor(private readonly options: FakeD1Options = {}) {}
+
   prepare(sql: string) {
     return new FakeStatement(this, sql);
+  }
+
+  shouldFailEmbeddingMetadata(): boolean {
+    return this.options.failEmbeddingMetadata === true;
+  }
+
+  shouldFailEmbeddingStatusUpdate(status: unknown): boolean {
+    return this.options.failEmbeddingStatusUpdate === true && status === 'indexed';
   }
 }
 
@@ -64,9 +84,20 @@ class FakeStatement {
       return { success: true };
     }
 
-    if (sql.startsWith('insert or ignore into memory_embeddings')) {
+    if (sql.startsWith('insert into memory_embeddings')) {
+      if (this.db.shouldFailEmbeddingMetadata()) {
+        throw new Error('metadata write failed');
+      }
       const [id, memoryId, chunkIndex, hash, model, vectorId, createdAt] = this.bindings;
-      if (!this.db.embeddings.some((row) => row.vector_id === vectorId)) {
+      const existing = this.db.embeddings.find(
+        (row) => row.memory_id === memoryId && row.chunk_index === Number(chunkIndex) && row.content_hash === hash
+      );
+      if (existing) {
+        // 模拟 ON CONFLICT DO UPDATE，确保测试能覆盖重复索引同内容的语义。
+        existing.embedding_model = String(model);
+        existing.vector_id = String(vectorId);
+        existing.created_at = String(createdAt);
+      } else if (!this.db.embeddings.some((row) => row.vector_id === vectorId)) {
         this.db.embeddings.push({
           id: String(id),
           memory_id: String(memoryId),
@@ -96,6 +127,9 @@ class FakeStatement {
 
     if (sql.startsWith('update memories set embedding_status')) {
       const [status, id] = this.bindings;
+      if (this.db.shouldFailEmbeddingStatusUpdate(status)) {
+        throw new Error('embedding status update failed');
+      }
       this.updateMemory(String(id), { embedding_status: status as MemoryRow['embedding_status'] });
       return { success: true };
     }
@@ -208,23 +242,40 @@ function normalized(sql: string): string {
   return sql.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-export function createFakeEnv(options: { failAi?: boolean; failVectorize?: boolean } = {}): RuntimeEnv {
-  const db = new InMemoryD1();
+export function createFakeEnv(
+  options: {
+    failAi?: boolean;
+    badAiShape?: boolean;
+    failVectorize?: boolean;
+    failEmbeddingMetadata?: boolean;
+    failEmbeddingStatusUpdate?: boolean;
+  } = {}
+): RuntimeEnv {
+  const d1Options: FakeD1Options = {};
+  if (options.failEmbeddingMetadata !== undefined) d1Options.failEmbeddingMetadata = options.failEmbeddingMetadata;
+  if (options.failEmbeddingStatusUpdate !== undefined) {
+    d1Options.failEmbeddingStatusUpdate = options.failEmbeddingStatusUpdate;
+  }
+  const db = new InMemoryD1(d1Options);
+  const vectorize = {
+    upserts: [] as FakeVectorizeRecord[],
+    async upsert(vectors: FakeVectorizeRecord[]) {
+      if (options.failVectorize) throw new Error('vectorize failed');
+      this.upserts.push(...vectors);
+      return { count: vectors.length };
+    }
+  };
   return {
     DB: db as unknown as D1Database,
     AUTH_TOKEN: 'test-token',
     EMBEDDING_MODEL: '@cf/baai/bge-base-en-v1.5',
     AI: {
       async run() {
-        if (options.failAi) throw new Error('embedding failed');
+        if (options.failAi) throw new Error('embedding failed\n    at simulated stack frame');
+        if (options.badAiShape) return { data: ['not-a-vector'] };
         return { data: [[0.1, 0.2, 0.3]] };
       }
     },
-    VECTORIZE: {
-      async upsert() {
-        if (options.failVectorize) throw new Error('vectorize failed');
-        return { count: 1 };
-      }
-    }
+    VECTORIZE: vectorize
   } as unknown as RuntimeEnv;
 }

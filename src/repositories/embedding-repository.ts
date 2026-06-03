@@ -3,12 +3,16 @@ import type { MemoryEmbeddingRow } from '../types';
 export class EmbeddingRepository {
   constructor(private readonly db: D1Database) {}
 
-  async createEmbeddingRecord(row: MemoryEmbeddingRow): Promise<MemoryEmbeddingRow> {
+  async upsertEmbeddingRecord(row: MemoryEmbeddingRow): Promise<MemoryEmbeddingRow> {
     await this.db
       .prepare(
-        `INSERT OR IGNORE INTO memory_embeddings (
+        `INSERT INTO memory_embeddings (
           id, memory_id, chunk_index, content_hash, embedding_model, vector_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(memory_id, chunk_index, content_hash) DO UPDATE SET
+          embedding_model = excluded.embedding_model,
+          vector_id = excluded.vector_id,
+          created_at = excluded.created_at`
       )
       .bind(row.id, row.memory_id, row.chunk_index, row.content_hash, row.embedding_model, row.vector_id, row.created_at)
       .run();

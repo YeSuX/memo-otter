@@ -23,6 +23,7 @@ POST /memories
 Use only when the user clearly asks to save memory or when they approve a proposed memory.
 
 Return the memory id, status, tags, and indexing status to the user.
+If indexing failed, tell the user that the memory was saved in D1 but may not be available for semantic recall until re-indexing succeeds.
 
 ## list_memories
 
@@ -53,6 +54,7 @@ PATCH /memories/:id
 ```
 
 Only update memory after explicit user intent. Content changes trigger re-indexing.
+After a content update, report whether the new index status is `indexed` or `failed`.
 
 ## archive_memory
 

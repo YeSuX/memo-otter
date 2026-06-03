@@ -459,7 +459,7 @@ pnpm typecheck
 pnpm test -- --run
 ```
 
-结果：
+首次审阅时结果：
 
 - TypeScript typecheck 通过。
 - Vitest 4 个测试文件通过。
@@ -553,9 +553,9 @@ pnpm test -- --run
 
 ### 13.6 `INSERT OR IGNORE` 可能掩盖 embedding metadata 写入问题
 
-`EmbeddingRepository.createEmbeddingRecord` 使用 `INSERT OR IGNORE`。如果因为唯一约束冲突被忽略，service 仍会认为 metadata 写入成功，并把 memory 标记为 indexed。
+首次审阅时，`EmbeddingRepository.createEmbeddingRecord` 使用 `INSERT OR IGNORE`。如果因为唯一约束冲突被忽略，service 仍会认为 metadata 写入成功，并把 memory 标记为 indexed。
 
-在同内容重复 reindex 时这可能是可接受行为，但如果未来需要严格确认“本次索引已记录”，需要检查 D1 run 结果或改成 upsert 策略。
+该风险已在 2026-06-03 的 Embedding 与索引加固中解决：写入逻辑已改为基于 `(memory_id, chunk_index, content_hash)` 的明确 upsert。
 
 ### 13.7 Route try/catch 与 app.onError 重复
 
@@ -581,7 +581,26 @@ tags 暂存在 JSON 字符串，列表时先从 D1 取 `limit * 3 + 1` 条候选
 6. 给 `GET /export` 写 export event，或者从数据模型中暂时移除 export event 承诺。
 7. 真实 Cloudflare 环境冒烟：create -> indexed -> Vectorize query -> search recall -> archive exclusion。
 
-## 15. 我对项目设计的判断
+## 15. 后续实现记录：Embedding 与索引加固
+
+更新日期：2026-06-03
+
+本次在深度审阅后完成了 Embedding 与索引模块的加固：
+
+- `EmbeddingService` 已移除手写 AI/Vectorize binding 类型，改用 `worker-configuration.d.ts` 生成的环境类型。
+- 索引失败阶段已从基于错误文案猜测，改为显式区分 `embedding`、`vectorize`、`d1_metadata`。
+- Vectorize metadata 已避免写入 `null`。
+- `EmbeddingRepository` 已从 `INSERT OR IGNORE` 调整为基于 `(memory_id, chunk_index, content_hash)` 的明确 upsert。
+- 错误摘要会清理控制字符和栈片段，降低把完整运行栈写入 D1 event 的风险。
+- 测试从 4 个文件 9 个用例扩展到 4 个文件 15 个用例。
+- 新增测试覆盖 Workers AI 失败、AI 返回格式异常、Vectorize 失败、D1 metadata 失败、`indexed` 状态更新失败、内容变化重新索引、Vectorize metadata 不写入 `null`。
+
+仍然保留的外部验证限制：
+
+- 本地 Wrangler 使用 remote Workers AI binding 创建 memory 时，Cloudflare 返回 internal error；当前代码按设计保留 D1 memory 并降级为 `failed`。
+- 最新 Worker 已成功部署，但本机访问 `workers.dev` `/health` 超时，远端 HTTP 主链路需网络可达后复测。
+
+## 16. 我对项目设计的判断
 
 这个项目的架构方向是健康的。
 

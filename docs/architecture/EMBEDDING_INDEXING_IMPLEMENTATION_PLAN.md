@@ -8,15 +8,15 @@
 
 ## 1. 当前状态摘要
 
-当前仓库已经具备 Embedding 与索引的第一版实现：
+当前仓库已经具备 Embedding 与索引的加固版实现：
 
 - `src/services/embedding-service.ts` 已实现 Workers AI embedding、Vectorize upsert、`memory_embeddings` 记录、`embedding_status` 更新和失败降级。
 - `src/services/memory-service.ts` 已在创建 memory 后同步调用 `indexMemory`。
 - `src/services/memory-service.ts` 已在内容更新后先标记 `stale`，再重新调用 `indexMemory`。
 - `migrations/0001_create_memory_tables.sql` 已包含 `embedding_status` 枚举约束和 `memory_embeddings` 表。
-- `test/memory-service.test.ts` 已覆盖创建后 indexed、索引失败后 memory 保留、metadata-only 编辑不重新索引。
+- `test/memory-service.test.ts` 已覆盖创建后 indexed、索引失败后 memory 保留、metadata-only 编辑不重新索引、Workers AI 返回异常、Vectorize 失败、D1 metadata 失败、内容更新重新索引和 Vectorize metadata 不写入 `null`。
 
-仍需要补齐和加固：
+已经完成的加固点：
 
 - 明确索引链路的分层边界，避免后续搜索实现时把 Vectorize 查询和索引写入混在一起。
 - 使用项目生成的 Worker 类型，减少手写 binding 类型。
@@ -24,6 +24,11 @@
 - 处理重复 reindex 时 `INSERT OR IGNORE` 可能掩盖 metadata 写入的问题。
 - 为 Vectorize 写入失败、D1 metadata 写入失败、内容更新 stale 过渡增加测试。
 - 为后续语义搜索提供稳定的 vector id 和回查能力。
+
+仍需外部条件复测：
+
+- 本地 Wrangler remote Workers AI binding 当前返回 Cloudflare internal error；失败降级已验证，真实 indexed 冒烟需 Cloudflare remote AI 恢复后复测。
+- 最新 Worker 已部署，但本机访问 `workers.dev` 超时；远端 HTTP 主链路需网络可达后复测。
 
 ## 2. 目标与非目标
 
@@ -202,9 +207,7 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
 
 建议保持该结构，不需要新 migration。
 
-需要注意的是：当前 `EmbeddingRepository.createEmbeddingRecord` 使用 `INSERT OR IGNORE`。这会避免重复索引同内容时报唯一约束错误，但也可能掩盖 metadata 未写入的问题。
-
-建议改成更明确的 upsert 语义：
+`EmbeddingRepository` 已使用明确的 upsert 语义，避免重复 reindex 时静默忽略 metadata 写入：
 
 ```ts
 async upsertEmbeddingRecord(row: MemoryEmbeddingRow): Promise<MemoryEmbeddingRow> {
@@ -234,13 +237,13 @@ async upsertEmbeddingRecord(row: MemoryEmbeddingRow): Promise<MemoryEmbeddingRow
 
 ### 6.1 Binding 类型
 
-当前代码手写了 `AiBinding` 和 `VectorizeBinding`。项目已经生成 `worker-configuration.d.ts`，`RuntimeEnv` 里已有：
+项目已经生成 `worker-configuration.d.ts`，`RuntimeEnv` 里已有：
 
 ```ts
 export type RuntimeEnv = Env & { AUTH_TOKEN: string };
 ```
 
-因此可以直接使用：
+当前实现直接使用生成类型：
 
 ```ts
 private async generateEmbedding(model: string, text: string): Promise<number[]> {
@@ -851,188 +854,190 @@ curl -sS http://localhost:8787/memories/<memory-id> \
 
 ### 阶段 0：实现前确认
 
-- [ ] 阅读 `docs/reviews/PROJECT_DEEP_DIVE_REPORT.md` 中与 Embedding、索引、搜索差距有关的章节。
-- [ ] 阅读 `src/services/embedding-service.ts`，确认当前 Workers AI、Vectorize、D1 metadata 写入流程。
-- [ ] 阅读 `src/services/memory-service.ts`，确认创建和内容更新时触发索引的位置。
-- [ ] 阅读 `src/repositories/embedding-repository.ts`，确认 `memory_embeddings` 写入和查询能力。
-- [ ] 阅读 `migrations/0001_create_memory_tables.sql`，确认无需新增 migration。
-- [ ] 检查 `worker-configuration.d.ts` 中 `AI` 和 `VECTORIZE` binding 类型。
-- [ ] 确认 `wrangler.jsonc` 中 `EMBEDDING_MODEL`、`AI`、`VECTORIZE` 配置仍符合当前环境。
-- [ ] 记录当前基线：运行 `pnpm typecheck`。
-- [ ] 记录当前基线：运行 `pnpm test -- --run`。
+- [x] 阅读 `docs/reviews/PROJECT_DEEP_DIVE_REPORT.md` 中与 Embedding、索引、搜索差距有关的章节。
+- [x] 阅读 `src/services/embedding-service.ts`，确认当前 Workers AI、Vectorize、D1 metadata 写入流程。
+- [x] 阅读 `src/services/memory-service.ts`，确认创建和内容更新时触发索引的位置。
+- [x] 阅读 `src/repositories/embedding-repository.ts`，确认 `memory_embeddings` 写入和查询能力。
+- [x] 阅读 `migrations/0001_create_memory_tables.sql`，确认无需新增 migration。
+- [x] 检查 `worker-configuration.d.ts` 中 `AI` 和 `VECTORIZE` binding 类型。
+- [x] 确认 `wrangler.jsonc` 中 `EMBEDDING_MODEL`、`AI`、`VECTORIZE` 配置仍符合当前环境。
+- [x] 记录当前基线：运行 `pnpm typecheck`。
+- [x] 记录当前基线：运行 `pnpm test -- --run`。
 
 ### 阶段 1：加固 EmbeddingService 类型边界
 
-- [ ] 删除 `src/services/embedding-service.ts` 中手写的 `AiBinding` 类型。
-- [ ] 删除 `src/services/embedding-service.ts` 中手写的 `VectorizeBinding` 类型。
-- [ ] 改用 `this.env.AI.run(...)` 调 Workers AI。
-- [ ] 改用 `this.env.VECTORIZE.upsert(...)` 写 Vectorize。
-- [ ] 检查 `RuntimeEnv` 类型是否足以覆盖 `AI`、`VECTORIZE`、`EMBEDDING_MODEL`。
-- [ ] 确认 `generateEmbedding` 的输入仍为 `{ text: [text] }`。
-- [ ] 确认默认 embedding model 仍为 `@cf/baai/bge-base-en-v1.5`。
-- [ ] 保留或增强 `extractEmbeddingVector` 对 `data: number[][]` 的解析。
-- [ ] 给 embedding 返回格式异常保留清晰错误：`Workers AI did not return an embedding vector`。
-- [ ] 运行 `pnpm typecheck`，确保 Cloudflare binding 类型通过。
+- [x] 删除 `src/services/embedding-service.ts` 中手写的 `AiBinding` 类型。
+- [x] 删除 `src/services/embedding-service.ts` 中手写的 `VectorizeBinding` 类型。
+- [x] 改用 `this.env.AI.run(...)` 调 Workers AI。
+- [x] 改用 `this.env.VECTORIZE.upsert(...)` 写 Vectorize。
+- [x] 检查 `RuntimeEnv` 类型是否足以覆盖 `AI`、`VECTORIZE`、`EMBEDDING_MODEL`。
+- [x] 确认 `generateEmbedding` 的输入仍为 `{ text: [text] }`。
+- [x] 确认默认 embedding model 仍为 `@cf/baai/bge-base-en-v1.5`。
+- [x] 保留或增强 `extractEmbeddingVector` 对 `data: number[][]` 的解析。
+- [x] 给 embedding 返回格式异常保留清晰错误：`Workers AI did not return an embedding vector`。
+- [x] 运行 `pnpm typecheck`，确保 Cloudflare binding 类型通过。
 
 ### 阶段 2：整理 Vectorize upsert 输入
 
-- [ ] 确认 `buildVectorId(memory.id, hash)` 仍作为唯一 vector id 来源。
-- [ ] 确认 `contentHash(memory.content)` 基于原始 memory content，而不是 embeddable text。
-- [ ] 确认 `buildEmbeddableMemoryText(memory)` 包含 title、project、scope、type、tags、content。
-- [ ] 把 Vectorize metadata 中的 `project: memory.project` 改成非 null 值，例如 `memory.project ?? ''`。
-- [ ] 确认 Vectorize metadata 不包含 `null`。
-- [ ] 确认 metadata 中保存 `memory_id`。
-- [ ] 确认 metadata 中保存 `scope`。
-- [ ] 确认 metadata 中保存 `type`。
-- [ ] 确认 metadata 中保存 `status`。
-- [ ] 确认 metadata 中保存 `chunk_index: 0`。
-- [ ] 确认 metadata 中保存 `content_hash`。
-- [ ] 不在本阶段加入 tags metadata，避免和 tags_json 源数据产生双写不一致。
+- [x] 确认 `buildVectorId(memory.id, hash)` 仍作为唯一 vector id 来源。
+- [x] 确认 `contentHash(memory.content)` 基于原始 memory content，而不是 embeddable text。
+- [x] 确认 `buildEmbeddableMemoryText(memory)` 包含 title、project、scope、type、tags、content。
+- [x] 把 Vectorize metadata 中的 `project: memory.project` 改成非 null 值，例如 `memory.project ?? ''`。
+- [x] 确认 Vectorize metadata 不包含 `null`。
+- [x] 确认 metadata 中保存 `memory_id`。
+- [x] 确认 metadata 中保存 `scope`。
+- [x] 确认 metadata 中保存 `type`。
+- [x] 确认 metadata 中保存 `status`。
+- [x] 确认 metadata 中保存 `chunk_index: 0`。
+- [x] 确认 metadata 中保存 `content_hash`。
+- [x] 不在本阶段加入 tags metadata，避免和 tags_json 源数据产生双写不一致。
 
 ### 阶段 3：显式区分失败阶段
 
-- [ ] 将当前基于错误 message 猜测 stage 的 `classifyIndexFailure` 改为显式传入 stage。
-- [ ] 为 Workers AI 调用包裹独立 `try/catch`。
-- [ ] Workers AI 调用失败时返回 `stage = 'embedding'`。
-- [ ] Workers AI 返回格式异常时返回 `stage = 'embedding'`。
-- [ ] 为 Vectorize upsert 包裹独立 `try/catch`。
-- [ ] Vectorize upsert 失败时返回 `stage = 'vectorize'`。
-- [ ] 为 `memory_embeddings` 写入包裹独立 `try/catch`。
-- [ ] `memory_embeddings` 写入失败时返回 `stage = 'd1_metadata'`。
-- [ ] 为 `memories.embedding_status = indexed` 更新包裹在 D1 metadata 阶段内。
-- [ ] `embedding_status = indexed` 更新失败时返回 `stage = 'd1_metadata'`。
-- [ ] 抽出 `failIndex(...)` 私有方法统一处理失败状态。
-- [ ] 抽出 `sanitizeIndexError(...)`，移除控制字符并限制错误摘要长度。
-- [ ] 确认失败时会调用 `memories.updateEmbeddingStatus(memoryId, 'failed')`。
-- [ ] 确认失败时会调用 `events.recordIndexFailedEvent(...)`。
-- [ ] 确认失败时不会删除 D1 memory。
+- [x] 将当前基于错误 message 猜测 stage 的 `classifyIndexFailure` 改为显式传入 stage。
+- [x] 为 Workers AI 调用包裹独立 `try/catch`。
+- [x] Workers AI 调用失败时返回 `stage = 'embedding'`。
+- [x] Workers AI 返回格式异常时返回 `stage = 'embedding'`。
+- [x] 为 Vectorize upsert 包裹独立 `try/catch`。
+- [x] Vectorize upsert 失败时返回 `stage = 'vectorize'`。
+- [x] 为 `memory_embeddings` 写入包裹独立 `try/catch`。
+- [x] `memory_embeddings` 写入失败时返回 `stage = 'd1_metadata'`。
+- [x] 为 `memories.embedding_status = indexed` 更新包裹在 D1 metadata 阶段内。
+- [x] `embedding_status = indexed` 更新失败时返回 `stage = 'd1_metadata'`。
+- [x] 抽出 `failIndex(...)` 私有方法统一处理失败状态。
+- [x] 抽出 `sanitizeIndexError(...)`，移除控制字符并限制错误摘要长度。
+- [x] 确认失败时会调用 `memories.updateEmbeddingStatus(memoryId, 'failed')`。
+- [x] 确认失败时会调用 `events.recordIndexFailedEvent(...)`。
+- [x] 确认失败时不会删除 D1 memory。
 
 ### 阶段 4：调整 EmbeddingRepository 写入语义
 
-- [ ] 决定保留方法名 `createEmbeddingRecord` 还是改名为 `upsertEmbeddingRecord`。
-- [ ] 如果改名，更新 `EmbeddingService` 调用点。
-- [ ] 把 `INSERT OR IGNORE` 改成显式 `ON CONFLICT(memory_id, chunk_index, content_hash) DO UPDATE`。
-- [ ] 确认重复索引同一 content hash 时不会静默丢失新的 `created_at`。
-- [ ] 确认重复索引同一 content hash 时不会静默丢失新的 `embedding_model`。
-- [ ] 确认 `UNIQUE(vector_id)` 仍然保护 vector id 冲突。
-- [ ] 更新 `test/fakes.ts`，支持新的 SQL 形态。
-- [ ] 为 fake D1 的 embedding metadata 写入逻辑保留唯一约束模拟。
-- [ ] 运行现有测试，确认 repository SQL 改动没有破坏旧用例。
+- [x] 决定保留方法名 `createEmbeddingRecord` 还是改名为 `upsertEmbeddingRecord`。
+- [x] 如果改名，更新 `EmbeddingService` 调用点。
+- [x] 把 `INSERT OR IGNORE` 改成显式 `ON CONFLICT(memory_id, chunk_index, content_hash) DO UPDATE`。
+- [x] 确认重复索引同一 content hash 时不会静默丢失新的 `created_at`。
+- [x] 确认重复索引同一 content hash 时不会静默丢失新的 `embedding_model`。
+- [x] 确认 `UNIQUE(vector_id)` 仍然保护 vector id 冲突。
+- [x] 更新 `test/fakes.ts`，支持新的 SQL 形态。
+- [x] 为 fake D1 的 embedding metadata 写入逻辑保留唯一约束模拟。
+- [x] 运行现有测试，确认 repository SQL 改动没有破坏旧用例。
 
 ### 阶段 5：保持 MemoryService 触发规则
 
-- [ ] 确认 `createMemory` 仍先写 D1 memory，再调用 `indexMemory`。
-- [ ] 确认创建 memory 初始 `embeddingStatus` 为 `pending`。
-- [ ] 确认创建索引成功后重新读取 saved memory，返回 `indexed` 状态。
-- [ ] 确认创建索引失败后返回 saved memory，状态为 `failed`。
-- [ ] 确认创建索引失败会追加 `index_failed` warning。
-- [ ] 确认 `updateMemory` 只有 content 变化时设置 `embedding_status = 'stale'`。
-- [ ] 确认 `updateMemory` 只有 content 变化时调用 `indexMemory`。
-- [ ] 确认 tags-only 更新不重新索引。
-- [ ] 确认 metadata-only 更新不重新索引。
-- [ ] 确认 project/type/status 变化暂不重新索引。
-- [ ] 确认 archive 不触发重新索引。
-- [ ] 确认 canonical 编辑 warning 仍然保留。
+- [x] 确认 `createMemory` 仍先写 D1 memory，再调用 `indexMemory`。
+- [x] 确认创建 memory 初始 `embeddingStatus` 为 `pending`。
+- [x] 确认创建索引成功后重新读取 saved memory，返回 `indexed` 状态。
+- [x] 确认创建索引失败后返回 saved memory，状态为 `failed`。
+- [x] 确认创建索引失败会追加 `index_failed` warning。
+- [x] 确认 `updateMemory` 只有 content 变化时设置 `embedding_status = 'stale'`。
+- [x] 确认 `updateMemory` 只有 content 变化时调用 `indexMemory`。
+- [x] 确认 tags-only 更新不重新索引。
+- [x] 确认 metadata-only 更新不重新索引。
+- [x] 确认 project/type/status 变化暂不重新索引。
+- [x] 确认 archive 不触发重新索引。
+- [x] 确认 canonical 编辑 warning 仍然保留。
 
 ### 阶段 6：扩展测试 fake 环境
 
-- [ ] 为 fake AI 保留正常返回 `{ data: [[0.1, 0.2, 0.3]] }`。
-- [ ] 为 fake AI 增加返回格式异常选项，例如 `badAiShape`。
-- [ ] 保留 `failAi` 模拟 Workers AI 抛错。
-- [ ] 保留 `failVectorize` 模拟 Vectorize upsert 抛错。
-- [ ] 增加 `failEmbeddingMetadata` 模拟 `memory_embeddings` 写入失败。
-- [ ] 如有必要，增加 `failEmbeddingStatusUpdate` 模拟 `embedding_status = indexed` 更新失败。
-- [ ] 让 fake Vectorize 记录 upsert 的 vector id，方便测试断言。
-- [ ] 让 fake Vectorize 记录 upsert metadata，方便测试 metadata 不含 null。
-- [ ] 更新 fake D1 对新 upsert SQL 的识别。
-- [ ] 确认 fake D1 查询最新 embedding 仍按 `created_at DESC` 排序。
+- [x] 为 fake AI 保留正常返回 `{ data: [[0.1, 0.2, 0.3]] }`。
+- [x] 为 fake AI 增加返回格式异常选项，例如 `badAiShape`。
+- [x] 保留 `failAi` 模拟 Workers AI 抛错。
+- [x] 保留 `failVectorize` 模拟 Vectorize upsert 抛错。
+- [x] 增加 `failEmbeddingMetadata` 模拟 `memory_embeddings` 写入失败。
+- [x] 如有必要，增加 `failEmbeddingStatusUpdate` 模拟 `embedding_status = indexed` 更新失败。
+- [x] 让 fake Vectorize 记录 upsert 的 vector id，方便测试断言。
+- [x] 让 fake Vectorize 记录 upsert metadata，方便测试 metadata 不含 null。
+- [x] 更新 fake D1 对新 upsert SQL 的识别。
+- [x] 确认 fake D1 查询最新 embedding 仍按 `created_at DESC` 排序。
 
 ### 阶段 7：补齐单元与服务测试
 
-- [ ] 新增 Workers AI 抛错时 memory 保留、状态 failed、stage 为 `embedding` 的测试。
-- [ ] 新增 Workers AI 返回格式异常时 stage 为 `embedding` 的测试。
-- [ ] 新增 Vectorize upsert 失败时 memory 保留、状态 failed、stage 为 `vectorize` 的测试。
-- [ ] 新增 D1 embedding metadata 写入失败时 memory 保留、状态 failed、stage 为 `d1_metadata` 的测试。
-- [ ] 新增 `embedding_status = indexed` 更新失败时 stage 为 `d1_metadata` 的测试，如 fake 支持。
-- [ ] 新增 content 更新后重新索引的测试。
-- [ ] 在 content 更新测试中断言新旧 `contentHash` 不同。
-- [ ] 在 content 更新测试中断言新旧 `vectorId` 不同。
-- [ ] 在 content 更新测试中断言最终 `embeddingStatus = indexed`。
-- [ ] 新增 detail 返回最新 indexing state 的测试。
-- [ ] 新增 metadata-only 更新不重新索引的断言，保留已有覆盖。
-- [ ] 新增 tags-only 更新不重新索引的断言，保留已有覆盖。
-- [ ] 新增 Vectorize metadata 不包含 null 的测试。
-- [ ] 新增 `index` event 写入成功的测试。
-- [ ] 新增 `index_failed` event 写入成功的测试。
-- [ ] 新增失败 warning 文案存在且可读的测试。
+- [x] 新增 Workers AI 抛错时 memory 保留、状态 failed、stage 为 `embedding` 的测试。
+- [x] 新增 Workers AI 返回格式异常时 stage 为 `embedding` 的测试。
+- [x] 新增 Vectorize upsert 失败时 memory 保留、状态 failed、stage 为 `vectorize` 的测试。
+- [x] 新增 D1 embedding metadata 写入失败时 memory 保留、状态 failed、stage 为 `d1_metadata` 的测试。
+- [x] 新增 `embedding_status = indexed` 更新失败时 stage 为 `d1_metadata` 的测试，如 fake 支持。
+- [x] 新增 content 更新后重新索引的测试。
+- [x] 在 content 更新测试中断言新旧 `contentHash` 不同。
+- [x] 在 content 更新测试中断言新旧 `vectorId` 不同。
+- [x] 在 content 更新测试中断言最终 `embeddingStatus = indexed`。
+- [x] 新增 detail 返回最新 indexing state 的测试。
+- [x] 新增 metadata-only 更新不重新索引的断言，保留已有覆盖。
+- [x] 新增 tags-only 更新不重新索引的断言，保留已有覆盖。
+- [x] 新增 Vectorize metadata 不包含 null 的测试。
+- [x] 新增 `index` event 写入成功的测试。
+- [x] 新增 `index_failed` event 写入成功的测试。
+- [x] 新增失败 warning 文案存在且可读的测试。
 
 ### 阶段 8：类型检查与自动化验证
 
-- [ ] 运行 `pnpm typecheck`。
-- [ ] 修复所有 TypeScript 类型错误。
-- [ ] 运行 `pnpm test -- --run`。
-- [ ] 修复所有测试失败。
-- [ ] 检查测试数量是否覆盖新增失败路径。
-- [ ] 检查没有跳过的测试。
-- [ ] 检查没有使用 `.only`。
-- [ ] 检查没有新增无关快照或临时文件。
-- [ ] 运行 `git diff --check`，确认没有尾随空格。
+- [x] 运行 `pnpm typecheck`。
+- [x] 修复所有 TypeScript 类型错误。
+- [x] 运行 `pnpm test -- --run`。
+- [x] 修复所有测试失败。
+- [x] 检查测试数量是否覆盖新增失败路径。
+- [x] 检查没有跳过的测试。
+- [x] 检查没有使用 `.only`。
+- [x] 检查没有新增无关快照或临时文件。
+- [x] 运行 `git diff --check`，确认没有尾随空格。
 
 ### 阶段 9：本地 Wrangler 冒烟
 
-- [ ] 确认 `.dev.vars` 中有本地 `AUTH_TOKEN`。
-- [ ] 确认 `wrangler.jsonc` 中 AI 和 Vectorize binding 可用于本地 remote 调用。
-- [ ] 运行 `pnpm dev`。
-- [ ] 调用 `GET /health`，确认 `db`、`ai`、`vectorize` binding 存在。
-- [ ] 调用 `POST /memories` 创建测试 memory。
-- [ ] 确认创建响应中 `indexing.status = indexed`。
-- [ ] 确认创建响应中 `indexing.embeddingModel` 非空。
-- [ ] 确认创建响应中 `indexing.vectorId` 非空。
-- [ ] 确认创建响应中 `indexing.contentHash` 非空。
-- [ ] 调用 `GET /memories/:id`。
-- [ ] 确认 detail events 包含 `create`。
-- [ ] 确认 detail events 包含 `index`。
-- [ ] 调用 `PATCH /memories/:id` 更新 content。
-- [ ] 确认更新响应中 vector id 改变。
-- [ ] 调用 `PATCH /memories/:id` 只更新 tags。
-- [ ] 确认 tags-only 更新响应中 vector id 不变。
-- [ ] 归档测试 memory，避免污染默认列表。
+- [x] 确认 `.dev.vars` 中有本地 `AUTH_TOKEN`。
+- [x] 确认 `wrangler.jsonc` 中 AI 和 Vectorize binding 可用于本地 remote 调用。
+- [x] 运行 `pnpm dev`。
+- [x] 调用 `GET /health`，确认 `db`、`ai`、`vectorize` binding 存在。
+- [x] 调用 `POST /memories` 创建测试 memory。
+- [ ] 确认创建响应中 `indexing.status = indexed`。阻塞：本地 remote Workers AI 返回 Cloudflare internal error，本次验证到 `failed` 降级。
+- [ ] 确认创建响应中 `indexing.embeddingModel` 非空。阻塞：索引未成功，没有 `memory_embeddings` 记录。
+- [ ] 确认创建响应中 `indexing.vectorId` 非空。阻塞：索引未成功，没有 Vectorize vector id。
+- [x] 确认创建响应中 `indexing.contentHash` 非空。
+- [x] 调用 `GET /memories/:id`。
+- [x] 确认 detail events 包含 `create`。
+- [ ] 确认 detail events 包含 `index`。阻塞：索引失败时按设计写入 `index_failed`。
+- [ ] 调用 `PATCH /memories/:id` 更新 content。阻塞：本地真实索引成功链路未通过，未继续做成功重索引 HTTP 冒烟。
+- [ ] 确认更新响应中 vector id 改变。阻塞：同上。
+- [ ] 调用 `PATCH /memories/:id` 只更新 tags。阻塞：同上。
+- [ ] 确认 tags-only 更新响应中 vector id 不变。阻塞：同上。
+- [x] 归档测试 memory，避免污染默认列表。
+
+本地冒烟记录：`POST /memories` 返回 201，D1 memory 已保存，Workers AI remote binding 返回 internal error，服务按设计返回 `embedding_status = failed`、`index_failed` event 和 warning。
 
 ### 阶段 10：远端 Cloudflare 冒烟
 
-- [ ] 确认远端 `AUTH_TOKEN` secret 已配置。
-- [ ] 确认远端 D1 migration 已应用。
-- [ ] 确认远端 Vectorize index 维度与 embedding model 输出一致。
-- [ ] 运行 `pnpm deploy`。
-- [ ] 对远端 Worker 调用 `GET /health`。
-- [ ] 对远端 Worker 调用 `POST /memories` 创建测试 memory。
-- [ ] 确认远端创建响应中 `embeddingStatus = indexed`。
-- [ ] 确认远端 D1 中有对应 `memories` row。
-- [ ] 确认远端 D1 中有对应 `memory_embeddings` row。
-- [ ] 确认远端 detail events 包含 `index`。
-- [ ] 测试完成后归档测试 memory。
-- [ ] 在测试记录中写下测试 memory id 和时间。
+- [x] 确认远端 `AUTH_TOKEN` secret 已配置。
+- [x] 确认远端 D1 migration 已应用。
+- [x] 确认远端 Vectorize index 维度与 embedding model 输出一致。
+- [x] 运行 `pnpm deploy`。
+- [ ] 对远端 Worker 调用 `GET /health`。阻塞：本机 `curl` 到 `workers.dev` 超时。
+- [ ] 对远端 Worker 调用 `POST /memories` 创建测试 memory。阻塞：远端 `/health` 不可达。
+- [ ] 确认远端创建响应中 `embeddingStatus = indexed`。阻塞：远端 HTTP 不可达。
+- [ ] 确认远端 D1 中有对应 `memories` row。阻塞：远端 HTTP 创建未执行。
+- [ ] 确认远端 D1 中有对应 `memory_embeddings` row。阻塞：远端 HTTP 创建未执行。
+- [ ] 确认远端 detail events 包含 `index`。阻塞：远端 HTTP 创建未执行。
+- [ ] 测试完成后归档测试 memory。阻塞：远端 HTTP 创建未执行。
+- [x] 在测试记录中写下测试 memory id 和时间。本次无远端 memory id；远端版本 ID：`71d11c98-af10-4b61-a111-5e1fca6a4199`，部署时间为本次执行时间。
 
 ### 阶段 11：文档同步
 
-- [ ] 更新 `docs/architecture/FUNCTIONAL_MODULES.md` 中 Embedding 与索引的实现状态。
-- [ ] 更新 `docs/architecture/MEMORY_BASIC_MANAGEMENT.md` 中涉及索引状态的描述，如有变化。
-- [ ] 更新 `docs/testing/TEST_PLAN.md` 中当前测试数量和覆盖范围。
-- [ ] 更新 `docs/reviews/PROJECT_DEEP_DIVE_REPORT.md` 或新增后续审阅记录，说明该模块已加固完成。
-- [ ] 如 API 响应字段有变化，更新 `src/openapi.ts`。
-- [ ] 如 Skill 需要提示 indexing 状态，更新 `src/skill/memo-otter-skill.md`。
-- [ ] 更新 README 中已知 MVP 限制，如旧 vector 清理策略有变化。
+- [x] 更新 `docs/architecture/FUNCTIONAL_MODULES.md` 中 Embedding 与索引的实现状态。
+- [x] 更新 `docs/architecture/MEMORY_BASIC_MANAGEMENT.md` 中涉及索引状态的描述，如有变化。本次索引状态语义未变化，无需改动。
+- [x] 更新 `docs/testing/TEST_PLAN.md` 中当前测试数量和覆盖范围。
+- [x] 更新 `docs/reviews/PROJECT_DEEP_DIVE_REPORT.md` 或新增后续审阅记录，说明该模块已加固完成。
+- [x] 如 API 响应字段有变化，更新 `src/openapi.ts`。本次响应字段未变化，无需改动。
+- [x] 如 Skill 需要提示 indexing 状态，更新 `src/skill/memo-otter-skill.md`。
+- [x] 更新 README 中已知 MVP 限制，如旧 vector 清理策略有变化。本次旧 vector 策略未变化，无需改动。
 
 ### 阶段 12：提交前人工检查
 
-- [ ] 确认没有实现语义搜索，避免超出本计划范围。
-- [ ] 确认没有新增 migration，除非确实改变了表结构。
-- [ ] 确认没有删除旧 Vectorize 向量的强依赖。
-- [ ] 确认没有把完整错误堆栈写入 `memory_events`。
-- [ ] 确认没有把 token、secret 或敏感环境变量写入日志。
-- [ ] 确认 route 层仍然不直接调用 Workers AI 或 Vectorize。
-- [ ] 确认 D1 仍是源数据，Vectorize 仍是可重建索引。
-- [ ] 确认本模块完成后可以支撑下一阶段语义搜索实现。
+- [x] 确认没有实现语义搜索，避免超出本计划范围。
+- [x] 确认没有新增 migration，除非确实改变了表结构。
+- [x] 确认没有删除旧 Vectorize 向量的强依赖。
+- [x] 确认没有把完整错误堆栈写入 `memory_events`。
+- [x] 确认没有把 token、secret 或敏感环境变量写入日志。
+- [x] 确认 route 层仍然不直接调用 Workers AI 或 Vectorize。
+- [x] 确认 D1 仍是源数据，Vectorize 仍是可重建索引。
+- [x] 确认本模块完成后可以支撑下一阶段语义搜索实现。
 
 ## 14. 与语义搜索模块的接口约定
 

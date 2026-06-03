@@ -243,6 +243,24 @@ Memory 数据模型
 
 ## 4. Embedding 与索引
 
+实现状态：已完成加固版工程实现，本地自动化测试已覆盖成功索引、Workers AI 失败、Vectorize 失败、D1 metadata 失败、内容更新重新索引和 metadata/tags-only 不重索引。
+
+落地内容：
+
+- `EmbeddingService` 使用生成的 Cloudflare binding 类型调用 `AI` 和 `VECTORIZE`。
+- `EmbeddingService` 显式区分 `embedding`、`vectorize`、`d1_metadata` 三类失败阶段。
+- Vectorize metadata 不写入 `null`，避免与生成类型不一致。
+- `EmbeddingRepository` 使用明确 upsert 语义保存 `memory_embeddings`。
+- 失败时保留 D1 源数据，标记 `embedding_status = failed`，记录 `index_failed` event。
+- 内容变化时先标记 `stale`，索引成功后恢复 `indexed`。
+- 错误摘要会清理控制字符和栈片段，避免把完整堆栈写入事件。
+
+当前限制：
+
+- 本地 Wrangler 使用 remote Workers AI 冒烟时仍遇到 Cloudflare internal error；memory 会按设计保留并降级为 `failed`。
+- 远端 Worker 已部署，但本机访问 `workers.dev` URL 超时，远端 HTTP 创建/详情冒烟需网络可达后复测。
+- 旧 Vectorize 向量暂不清理，后续语义搜索需要按 `memory_id` 去重。
+
 ### 4.1 模块目标
 
 把 memory 内容转成向量并写入 Vectorize，让自然语言搜索可以召回相关记忆。

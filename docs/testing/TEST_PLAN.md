@@ -1,18 +1,20 @@
 # Memo Otter 测试方案
 
-更新时间：2026-06-02
+更新时间：2026-06-03
 
 这份文档定义 Memo Otter MVP 的测试策略、测试范围、测试类型、核心用例和上线验收标准。它的目标不是把第一版测试做得很庞大，而是确保个人 AI 记忆服务的最小闭环真实可靠。
 
 当前 Memory 基础管理实现验证状态：
 
 - `pnpm typecheck` 已通过。
-- `pnpm test -- --run` 已通过，当前 3 个测试文件、8 个测试用例。
+- `pnpm test -- --run` 已通过，当前 4 个测试文件、15 个测试用例。
 - `pnpm db:migrate:local` 已通过。
 - `pnpm db:migrate:remote` 已通过。
 - `pnpm wrangler deploy` 已成功部署到 `https://memo-otter.suxiong1998.workers.dev`。
-- 本地 HTTP 冒烟完成创建、列表、详情、编辑、归档和 archived 搜索排除；Workers AI 返回 internal error 时，memory 保留且索引状态降级为 `failed`。
-- 远端 HTTP 冒烟在本机 curl 中超时，需后续复测。
+- Embedding 与索引自动化测试已覆盖成功索引、Workers AI 失败、Workers AI 返回格式异常、Vectorize upsert 失败、D1 metadata 写入失败、`indexed` 状态更新失败、内容更新重新索引、tags-only 不重索引、Vectorize metadata 不写入 `null`。
+- 本地 HTTP 冒烟完成 health、创建、详情和归档；Workers AI remote binding 返回 internal error 时，memory 保留且索引状态降级为 `failed`，符合失败降级设计。
+- `pnpm wrangler deploy` 已成功部署最新版本到 `https://memo-otter.suxiong1998.workers.dev`。
+- 远端 HTTP 冒烟在本机 curl 中访问 `/health` 超时，需后续复测网络可达性后再执行远端创建、详情和归档主链路。
 
 MVP 需要验证的主链路：
 

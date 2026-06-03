@@ -620,7 +620,7 @@ Vectorize metadata 建议只放可过滤和可排查的轻量字段：
 
 职责：
 
-- `createEmbeddingRecord(row)`
+- `upsertEmbeddingRecord(row)`
 - `findByMemoryId(memoryId)`
 - `findByVectorIds(vectorIds)`
 - `deleteByMemoryId(memoryId)`，仅用于测试或未来物理删除。
