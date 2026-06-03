@@ -129,6 +129,10 @@ export type ArchiveMemoryInput = {
   reason?: string | undefined;
 };
 
+export type ReindexMemoryInput = {
+  source?: string | undefined;
+};
+
 export type SearchInput = {
   query: string;
   project?: string | null | undefined;

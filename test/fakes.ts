@@ -293,9 +293,11 @@ export function createFakeEnv(
     AUTH_TOKEN: 'test-token',
     EMBEDDING_MODEL: '@cf/baai/bge-base-en-v1.5',
     AI: {
+      fail: options.failAi === true,
+      badShape: options.badAiShape === true,
       async run() {
-        if (options.failAi) throw new Error('embedding failed\n    at simulated stack frame');
-        if (options.badAiShape) return { data: ['not-a-vector'] };
+        if (this.fail) throw new Error('embedding failed\n    at simulated stack frame');
+        if (this.badShape) return { data: ['not-a-vector'] };
         return { data: [[0.1, 0.2, 0.3]] };
       }
     },

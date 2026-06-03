@@ -166,6 +166,34 @@ export const openApiDocument = {
         }
       }
     },
+    '/memories/{id}/reindex': {
+      post: {
+        tags: ['Memories'],
+        summary: 'Reindex a memory',
+        description: 'Regenerate the memory embedding and upsert it into Vectorize without changing memory content.',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ReindexMemoryInput' }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Memory reindexed',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/MemoryWriteResponse' }
+              }
+            }
+          },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '404': { $ref: '#/components/responses/MemoryNotFound' }
+        }
+      }
+    },
     '/search': {
       post: {
         tags: ['Search'],
@@ -373,6 +401,13 @@ export const openApiDocument = {
           source: { type: 'string', maxLength: 40 },
           reason: { type: 'string', maxLength: 500 }
         }
+      },
+      ReindexMemoryInput: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', maxLength: 40 }
+        },
+        additionalProperties: false
       },
       MemoryWriteResponse: {
         type: 'object',

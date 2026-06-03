@@ -138,3 +138,13 @@ export const archiveMemorySchema = z
     reason: z.string().trim().max(500).optional()
   })
   .strict();
+
+export const reindexMemorySchema = z
+  .object({
+    source: z
+      .string()
+      .max(40)
+      .optional()
+      .transform((value) => (value === undefined ? undefined : normalizeSource(value, 'api')))
+  })
+  .strict();

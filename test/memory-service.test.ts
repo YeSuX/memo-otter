@@ -134,4 +134,34 @@ describe('MemoryService', () => {
     expect(vectorize.upserts[0]?.metadata?.project).toBe('');
     expect(Object.values(vectorize.upserts[0]?.metadata ?? {}).some((value) => value === null)).toBe(false);
   });
+
+  it('reindexes a failed memory without changing content', async () => {
+    const env = createFakeEnv({ failAi: true });
+    const service = new MemoryService(env);
+    const created = await service.createMemory({ content: 'Retry indexing after Workers AI recovers.' });
+    expect(created.memory.embeddingStatus).toBe('failed');
+
+    (env.AI as unknown as { fail: boolean }).fail = false;
+    const reindexed = await service.reindexMemory(created.memory.id, { source: 'api' });
+
+    expect(reindexed.memory.content).toBe(created.memory.content);
+    expect(reindexed.memory.embeddingStatus).toBe('indexed');
+    expect(reindexed.indexing.status).toBe('indexed');
+    expect(reindexed.warnings).toHaveLength(0);
+  });
+
+  it('does not reindex archived memories', async () => {
+    const env = createFakeEnv();
+    const service = new MemoryService(env);
+    const created = await service.createMemory({ content: 'Archived memories should not be reindexed.' });
+    await service.archiveMemory(created.memory.id);
+
+    const vectorize = env.VECTORIZE as unknown as { upserts: unknown[] };
+    const before = vectorize.upserts.length;
+    const reindexed = await service.reindexMemory(created.memory.id);
+
+    expect(reindexed.memory.status).toBe('archived');
+    expect(reindexed.indexing.vectorId).toBe(created.indexing.vectorId);
+    expect(vectorize.upserts).toHaveLength(before);
+  });
 });

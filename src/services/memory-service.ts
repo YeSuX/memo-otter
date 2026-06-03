@@ -9,6 +9,7 @@ import type {
   MemoryIndexState,
   MemoryListItem,
   MemoryWarning,
+  ReindexMemoryInput,
   RuntimeEnv,
   UpdateMemoryInput
 } from '../types';
@@ -265,6 +266,26 @@ export class MemoryService {
       source
     );
     return { memory: archived, warnings: [] };
+  }
+
+  async reindexMemory(
+    id: string,
+    input: ReindexMemoryInput = {},
+    context: ServiceContext = {}
+  ): Promise<{ memory: Memory; indexing: MemoryIndexState; warnings: MemoryWarning[] }> {
+    const existing = await this.requireMemory(id);
+    const source = normalizeSource(input.source ?? context.source, existing.source ?? 'api');
+    const indexing = await this.indexing.reindexMemory(existing, source);
+    const memory = (await this.memories.getMemoryById(id)) ?? existing;
+    const warnings: MemoryWarning[] = [];
+    if (indexing.status === 'failed') {
+      warnings.push({
+        type: 'index_failed',
+        severity: 'warning',
+        message: indexing.failure?.message ?? 'indexing failed'
+      });
+    }
+    return { memory, indexing, warnings };
   }
 
   private async requireMemory(id: string): Promise<Memory> {

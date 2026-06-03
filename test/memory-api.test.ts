@@ -47,6 +47,21 @@ describe('Memory API', () => {
     );
     expect(patch.status).toBe(200);
 
+    const reindex = await app.request(
+      `/memories/${created.memory.id}/reindex`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ source: 'api' })
+      },
+      env
+    );
+    expect(reindex.status).toBe(200);
+    expect(((await reindex.json()) as { indexing: { status: string } }).indexing.status).toBe('indexed');
+
     const archive = await app.request(
       `/memories/${created.memory.id}/archive`,
       {

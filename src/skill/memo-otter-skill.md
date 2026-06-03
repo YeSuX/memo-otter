@@ -90,6 +90,18 @@ PATCH /memories/:id
 Only update memory after explicit user intent. Content changes trigger re-indexing.
 After a content update, report whether the new index status is `indexed` or `failed`.
 
+## reindex_memory
+
+Call:
+
+```text
+POST /memories/:id/reindex
+```
+
+Use this when a memory was saved but `embeddingStatus` is `failed` or `stale`, and the user wants to retry semantic indexing without changing the memory content.
+
+Report the resulting `indexing.status`. If it is still `failed`, explain that the D1 memory is saved but Workers AI or Vectorize still failed.
+
 ## archive_memory
 
 Call:
